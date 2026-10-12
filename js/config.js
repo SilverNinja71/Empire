@@ -40,16 +40,9 @@ export const CLASSES = {
     },
     energy: {
         name: "Energy",
-        desc: "Dash again in the air (slightly weaker dashes). Speed boost starts at 25% and grows while you run (max 60%); jumping or standing still drains it.",
+        desc: "Dash again in the air, with a shorter dash cooldown.",
         dashCooldown: 40,
-        dashDamageMult: 0.85,
-        boostStart: 0.25,
-        boostMax: 0.60,
-        runFrames: 20,
-        runGain: 0.01,
-        jumpLoss: 0.05,
-        stillFrames: 60,
-        stillLoss: 0.01
+        dashDamageMult: 1
     },
     potion: {
         name: "Potionmaster",

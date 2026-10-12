@@ -93,9 +93,6 @@ export class Fighter {
     resetClassState() {
         this.shadowTimer = 0;
         this.invis = false;
-        this.energyBoost = CLASSES.energy.boostStart;
-        this.runFrames = 0;
-        this.stillFrames = 0;
         this.voidTimer = this.nextVoidDelay();
         this.sizeCooldown = 0;
         this.setBig(false);
@@ -116,7 +113,6 @@ export class Fighter {
     // Walking speed multiplier from the class (slow is applied in physics for everyone)
     moveSpeedMult() {
         if (this.classId === "shadow" && this.invis) return CLASSES.shadow.invisSpeedMult;
-        if (this.classId === "energy") return 1 + this.energyBoost;
         return 1;
     }
 
@@ -274,9 +270,6 @@ export class Fighter {
             const isDoubleJump = !this.onGround && this.coyoteTimer <= 0;
 
             this.yVel = CORE_PHYSICS.jumpPower;
-            if (this.classId === "energy") {
-                this.energyBoost = Math.max(0, Math.round((this.energyBoost - CLASSES.energy.jumpLoss) * 100) / 100);
-            }
 
             if (isDoubleJump) {
                 this.jumpsLeft--;
@@ -460,24 +453,6 @@ export class Fighter {
             }
         } else {
             this.invis = false;
-        }
-
-        // Energy: boost grows while running on the ground, drains while standing still
-        if (this.classId === "energy" && this.onGround && !this.dashing) {
-            const cls = CLASSES.energy;
-            if (Math.abs(this.xVel) > 1) {
-                this.stillFrames = 0;
-                if (++this.runFrames >= cls.runFrames) {
-                    this.runFrames = 0;
-                    this.energyBoost = Math.min(cls.boostMax, Math.round((this.energyBoost + cls.runGain) * 100) / 100);
-                }
-            } else if (Math.abs(this.xVel) < 0.3) {
-                this.runFrames = 0;
-                if (++this.stillFrames >= cls.stillFrames) {
-                    this.stillFrames = 0;
-                    this.energyBoost = Math.max(0, Math.round((this.energyBoost - cls.stillLoss) * 100) / 100);
-                }
-            }
         }
 
         // Status effects

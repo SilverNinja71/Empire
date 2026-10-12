@@ -3970,16 +3970,9 @@ input, textarea, .selectable {
       },
       energy: {
           name: "Energy",
-          desc: "Dash again in the air (slightly weaker dashes). Speed boost starts at 25% and grows while you run (max 60%); jumping or standing still drains it.",
+          desc: "Dash again in the air, with a shorter dash cooldown.",
           dashCooldown: 40,
-          dashDamageMult: 0.85,
-          boostStart: 0.25,
-          boostMax: 0.60,
-          runFrames: 20,
-          runGain: 0.01,
-          jumpLoss: 0.05,
-          stillFrames: 60,
-          stillLoss: 0.01
+          dashDamageMult: 1
       },
       potion: {
           name: "Potionmaster",
@@ -6781,9 +6774,6 @@ input, textarea, .selectable {
       resetClassState() {
           this.shadowTimer = 0;
           this.invis = false;
-          this.energyBoost = CLASSES.energy.boostStart;
-          this.runFrames = 0;
-          this.stillFrames = 0;
           this.voidTimer = this.nextVoidDelay();
           this.sizeCooldown = 0;
           this.setBig(false);
@@ -6804,7 +6794,6 @@ input, textarea, .selectable {
       // Walking speed multiplier from the class (slow is applied in physics for everyone)
       moveSpeedMult() {
           if (this.classId === "shadow" && this.invis) return CLASSES.shadow.invisSpeedMult;
-          if (this.classId === "energy") return 1 + this.energyBoost;
           return 1;
       }
   
@@ -6962,9 +6951,6 @@ input, textarea, .selectable {
               const isDoubleJump = !this.onGround && this.coyoteTimer <= 0;
   
               this.yVel = CORE_PHYSICS.jumpPower;
-              if (this.classId === "energy") {
-                  this.energyBoost = Math.max(0, Math.round((this.energyBoost - CLASSES.energy.jumpLoss) * 100) / 100);
-              }
   
               if (isDoubleJump) {
                   this.jumpsLeft--;
@@ -7148,24 +7134,6 @@ input, textarea, .selectable {
               }
           } else {
               this.invis = false;
-          }
-  
-          // Energy: boost grows while running on the ground, drains while standing still
-          if (this.classId === "energy" && this.onGround && !this.dashing) {
-              const cls = CLASSES.energy;
-              if (Math.abs(this.xVel) > 1) {
-                  this.stillFrames = 0;
-                  if (++this.runFrames >= cls.runFrames) {
-                      this.runFrames = 0;
-                      this.energyBoost = Math.min(cls.boostMax, Math.round((this.energyBoost + cls.runGain) * 100) / 100);
-                  }
-              } else if (Math.abs(this.xVel) < 0.3) {
-                  this.runFrames = 0;
-                  if (++this.stillFrames >= cls.stillFrames) {
-                      this.stillFrames = 0;
-                      this.energyBoost = Math.max(0, Math.round((this.energyBoost - cls.stillLoss) * 100) / 100);
-                  }
-              }
           }
   
           // Status effects
@@ -9181,7 +9149,7 @@ input, textarea, .selectable {
               text += " · slams stun longer";
               color = "#ffe14a";
           } else if (f.classId === "energy") {
-              text += ` · speed +${Math.round((f.energyBoost || 0) * 100)}%`;
+              text += " · air dash ready";
               color = "#7ff0ff";
           } else if (f.classId === "potion") {
               text += " · hits slow, poison, blind";
@@ -9820,7 +9788,7 @@ input, textarea, .selectable {
           return [r(f.x), r(f.y), r(f.xVel), r(f.yVel), f.facing, r(f.hp), r(f.ghostHp),
               r(f.squashX), r(f.squashY), f.dashing ? 1 : 0, f.slamming ? 1 : 0, f.maxHp, f.weaponId, f.invis ? 1 : 0,
               (f.slowT > 0 ? 1 : 0) | (f.poisonT > 0 ? 2 : 0) | (f.fireT > 0 ? 4 : 0) | (f.blindT > 0 ? 8 : 0) | (f.freezeT > 0 ? 16 : 0),
-              f.big ? 1 : 0, Math.round(f.energyBoost * 100), f.shadowTimer];
+              f.big ? 1 : 0, 0, f.shadowTimer];
       }
   
       unpackFighter(f, d) {
@@ -9842,7 +9810,6 @@ input, textarea, .selectable {
               f.setBig(!!d[15]);
               [f.x, f.y] = d; // keep the host's exact position after resizing
           }
-          if (d[16] !== undefined) f.energyBoost = d[16] / 100;
           if (d[17] !== undefined) f.shadowTimer = d[17];
           // Recreate hit effects locally from health changes
           if (f.hp < prevHp - 0.01 && prevHp > 0) {

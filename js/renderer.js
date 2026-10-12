@@ -1213,7 +1213,7 @@ export class Renderer {
             text += " · slams stun longer";
             color = "#ffe14a";
         } else if (f.classId === "energy") {
-            text += ` · speed +${Math.round((f.energyBoost || 0) * 100)}%`;
+            text += " · air dash ready";
             color = "#7ff0ff";
         } else if (f.classId === "potion") {
             text += " · hits slow, poison, blind";

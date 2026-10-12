@@ -271,7 +271,7 @@ export class Game {
         return [r(f.x), r(f.y), r(f.xVel), r(f.yVel), f.facing, r(f.hp), r(f.ghostHp),
             r(f.squashX), r(f.squashY), f.dashing ? 1 : 0, f.slamming ? 1 : 0, f.maxHp, f.weaponId, f.invis ? 1 : 0,
             (f.slowT > 0 ? 1 : 0) | (f.poisonT > 0 ? 2 : 0) | (f.fireT > 0 ? 4 : 0) | (f.blindT > 0 ? 8 : 0) | (f.freezeT > 0 ? 16 : 0),
-            f.big ? 1 : 0, Math.round(f.energyBoost * 100), f.shadowTimer];
+            f.big ? 1 : 0, 0, f.shadowTimer];
     }
 
     unpackFighter(f, d) {
@@ -293,7 +293,6 @@ export class Game {
             f.setBig(!!d[15]);
             [f.x, f.y] = d; // keep the host's exact position after resizing
         }
-        if (d[16] !== undefined) f.energyBoost = d[16] / 100;
         if (d[17] !== undefined) f.shadowTimer = d[17];
         // Recreate hit effects locally from health changes
         if (f.hp < prevHp - 0.01 && prevHp > 0) {
