@@ -5,7 +5,7 @@
 // Arena Hub (1v1, 2v2, 5v5), and National Obsidian Leaderboard
 // ==========================================
 
-import { MODE_METADATA, BOT_SETTINGS, CLASSES } from './config.js';
+import { MODE_METADATA, BOT_SETTINGS, CLASSES, randomClassId } from './config.js';
 import { sound } from './audio.js';
 import { auth, AVATAR_PRESETS, BLOCK_FACES } from './auth.js';
 import { WEAPON_TYPES } from './weapons.js';
@@ -1073,7 +1073,8 @@ export class UIManager {
             skin: ["alex", "zombie", "skeleton", "creeper"][Math.floor(Math.random() * 4)],
             weapon: ["mace", "spear", "sword"][Math.floor(Math.random() * 3)],
             weapon2: null,
-            upgrades: {}
+            upgrades: {},
+            cls: randomClassId()
         });
         const slotFor = (player, team, botName) => player
             ? { ...player.info, team, peer: player.peer }

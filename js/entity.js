@@ -266,10 +266,13 @@ export class Fighter {
             return false;
         }
 
-        if (this.onGround || this.coyoteTimer > 0 || this.jumpsLeft > 0) {
+        // Buddha can only jump once (no double jump)
+        const canAirJump = this.jumpsLeft > 0 && this.classId !== "buddha";
+        if (this.onGround || this.coyoteTimer > 0 || canAirJump) {
             const isDoubleJump = !this.onGround && this.coyoteTimer <= 0;
 
-            this.yVel = CORE_PHYSICS.jumpPower;
+            // Buddha's single jump is higher to make up for having no double jump
+            this.yVel = CORE_PHYSICS.jumpPower * (this.classId === "buddha" ? CLASSES.buddha.jumpMult : 1);
 
             if (isDoubleJump) {
                 this.jumpsLeft--;

@@ -4,7 +4,7 @@
 // Arrows projectile system, and 1v1 / 2v2 / 5v5 Team Arena matches
 // ==========================================
 
-import { ARENA_CONFIG, PLATFORMS_CONFIG, BOT_SETTINGS, MODE_METADATA, getBotParamsForMode, GAME_SPEED, PLAYER_MOVE_SPEED, CLASSES } from './config.js';
+import { ARENA_CONFIG, PLATFORMS_CONFIG, BOT_SETTINGS, MODE_METADATA, getBotParamsForMode, GAME_SPEED, PLAYER_MOVE_SPEED, CLASSES, randomClassId } from './config.js';
 import { sound } from './audio.js';
 import { ParticleManager } from './particles.js';
 import { Fighter } from './entity.js';
@@ -134,7 +134,7 @@ export class Game {
         this.bot.name = (mode === "pvp") ? "Player 2" : `[BOT] ${botMeta.name}`;
         this.bot.setLoadout(mode === "god" ? "mace" : (mode === "pro" ? "sword" : "spear"));
         this.bot.setSkin(mode === "god" ? "enderman" : (mode === "pro" ? "diamond_knight" : "alex"));
-        this.bot.setClass("normal");
+        this.bot.setClass((mode === "pvp" || mode === "practice") ? "normal" : randomClassId());
         this.bot.setTeam("red"); // OPPONENT IS ALWAYS RED
         this.bot.isBotGame = isBot;
         this.bot.isBot = mode !== "pvp"; // Player 2 is a person in local PvP (no [BOT] tag)
@@ -391,6 +391,7 @@ export class Game {
                 fighter.reset(data.x, data.facing, data.maxHp);
                 fighter.setWeapon(data.weaponId, {});
                 fighter.setSkin(data.skinId);
+                fighter.setClass(randomClassId());
                 fighter.setTeam("blue");
                 return fighter;
             }
@@ -402,6 +403,7 @@ export class Game {
             fighter.reset(data.x, data.facing, data.maxHp);
             fighter.setWeapon(data.weaponId, {});
             fighter.setSkin(data.skinId);
+            fighter.setClass(randomClassId());
             fighter.setTeam("red");
             return fighter;
         });

@@ -40,9 +40,9 @@ export const CLASSES = {
     },
     energy: {
         name: "Energy",
-        desc: "Dash again in the air, with a shorter dash cooldown.",
+        desc: "Dash again in the air, with a shorter dash cooldown and stronger dashes (1.15x damage).",
         dashCooldown: 40,
-        dashDamageMult: 1
+        dashDamageMult: 1.15
     },
     potion: {
         name: "Potionmaster",
@@ -53,8 +53,8 @@ export const CLASSES = {
     },
     pyro: {
         name: "Pyro",
-        desc: "Your hits have a 25% chance to set enemies on fire for 5s: 2 damage per second, and each burn freezes them briefly.",
-        fireChance: 0.25, fireTime: 300, fireTick: 60, fireDamage: 2, fireFreeze: 15
+        desc: "Your hits have an 18% chance to set enemies on fire for 5s: 2 damage per second, and each burn freezes them briefly.",
+        fireChance: 0.18, fireTime: 300, fireTick: 60, fireDamage: 2, fireFreeze: 15
     },
     void: {
         name: "Void Walker",
@@ -64,13 +64,20 @@ export const CLASSES = {
     },
     buddha: {
         name: "Buddha",
-        desc: "Press B to grow big or shrink back. While big you deal 1.3x damage at the same speed, but your body is twice as big and much easier to hit.",
+        desc: "Press B to grow big or shrink back. Only one jump, but it goes higher. While big you deal 1.3x damage at the same speed, but your body is twice as big and much easier to hit.",
         bigScale: 2,            // body (hitbox) is 2x as big...
         attackReachScale: 1.4,  // ...but attacks only reach 1.4x as far
         bigDamageMult: 1.3,
-        toggleCooldown: 30
+        toggleCooldown: 30,
+        jumpMult: 1.3
     }
 };
+
+// Bots get a random class each match
+export function randomClassId() {
+    const ids = Object.keys(CLASSES);
+    return ids[Math.floor(Math.random() * ids.length)];
+}
 
 export const ARENA_CONFIG = {
     width: 800,

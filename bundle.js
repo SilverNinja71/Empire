@@ -44,9 +44,9 @@
       },
       energy: {
           name: "Energy",
-          desc: "Dash again in the air, with a shorter dash cooldown.",
+          desc: "Dash again in the air, with a shorter dash cooldown and stronger dashes (1.15x damage).",
           dashCooldown: 40,
-          dashDamageMult: 1
+          dashDamageMult: 1.15
       },
       potion: {
           name: "Potionmaster",
@@ -57,8 +57,8 @@
       },
       pyro: {
           name: "Pyro",
-          desc: "Your hits have a 25% chance to set enemies on fire for 5s: 2 damage per second, and each burn freezes them briefly.",
-          fireChance: 0.25, fireTime: 300, fireTick: 60, fireDamage: 2, fireFreeze: 15
+          desc: "Your hits have an 18% chance to set enemies on fire for 5s: 2 damage per second, and each burn freezes them briefly.",
+          fireChance: 0.18, fireTime: 300, fireTick: 60, fireDamage: 2, fireFreeze: 15
       },
       void: {
           name: "Void Walker",
@@ -68,13 +68,20 @@
       },
       buddha: {
           name: "Buddha",
-          desc: "Press B to grow big or shrink back. While big you deal 1.3x damage at the same speed, but your body is twice as big and much easier to hit.",
+          desc: "Press B to grow big or shrink back. Only one jump, but it goes higher. While big you deal 1.3x damage at the same speed, but your body is twice as big and much easier to hit.",
           bigScale: 2,            // body (hitbox) is 2x as big...
           attackReachScale: 1.4,  // ...but attacks only reach 1.4x as far
           bigDamageMult: 1.3,
-          toggleCooldown: 30
+          toggleCooldown: 30,
+          jumpMult: 1.3
       }
   };
+  
+  // Bots get a random class each match
+  function randomClassId() {
+      const ids = Object.keys(CLASSES);
+      return ids[Math.floor(Math.random() * ids.length)];
+  }
   
   const ARENA_CONFIG = {
       width: 800,
@@ -3021,10 +3028,13 @@
               return false;
           }
   
-          if (this.onGround || this.coyoteTimer > 0 || this.jumpsLeft > 0) {
+          // Buddha can only jump once (no double jump)
+          const canAirJump = this.jumpsLeft > 0 && this.classId !== "buddha";
+          if (this.onGround || this.coyoteTimer > 0 || canAirJump) {
               const isDoubleJump = !this.onGround && this.coyoteTimer <= 0;
   
-              this.yVel = CORE_PHYSICS.jumpPower;
+              // Buddha's single jump is higher to make up for having no double jump
+              this.yVel = CORE_PHYSICS.jumpPower * (this.classId === "buddha" ? CLASSES.buddha.jumpMult : 1);
   
               if (isDoubleJump) {
                   this.jumpsLeft--;
@@ -3441,6 +3451,7 @@
           this.invisClock = 0;
           this.invisTimer = 0;
           this.sinceHit = 0;
+          this.sizeTimer = 0;
       }
   
       setParams(params) {
@@ -3459,6 +3470,7 @@
           this.invisClock = 0;
           this.invisTimer = 0;
           this.sinceHit = 0;
+          this.sizeTimer = 0;
       }
   
       // Helper: Bot dash initiating
@@ -3512,6 +3524,12 @@
           const playerCenter = targetPlayer.x + targetPlayer.w / 2;
           const botCenter = bot.x + bot.w / 2;
           const distance = playerCenter - botCenter;
+  
+          // Buddha bots grow big up close and shrink back down when far away
+          if (bot.classId === "buddha" && --this.sizeTimer <= 0) {
+              if ((Math.abs(distance) < 160) !== !!bot.big) bot.toggleSize();
+              this.sizeTimer = 60 + Math.floor(Math.random() * 120);
+          }
   
           // Predicted distance with lead time
           const predictedDistance = distance + targetPlayer.xVel * P.slamLead;
@@ -5725,7 +5743,7 @@
           this.bot.name = (mode === "pvp") ? "Player 2" : `[BOT] ${botMeta.name}`;
           this.bot.setLoadout(mode === "god" ? "mace" : (mode === "pro" ? "sword" : "spear"));
           this.bot.setSkin(mode === "god" ? "enderman" : (mode === "pro" ? "diamond_knight" : "alex"));
-          this.bot.setClass("normal");
+          this.bot.setClass((mode === "pvp" || mode === "practice") ? "normal" : randomClassId());
           this.bot.setTeam("red"); // OPPONENT IS ALWAYS RED
           this.bot.isBotGame = isBot;
           this.bot.isBot = mode !== "pvp"; // Player 2 is a person in local PvP (no [BOT] tag)
@@ -5982,6 +6000,7 @@
                   fighter.reset(data.x, data.facing, data.maxHp);
                   fighter.setWeapon(data.weaponId, {});
                   fighter.setSkin(data.skinId);
+                  fighter.setClass(randomClassId());
                   fighter.setTeam("blue");
                   return fighter;
               }
@@ -5993,6 +6012,7 @@
               fighter.reset(data.x, data.facing, data.maxHp);
               fighter.setWeapon(data.weaponId, {});
               fighter.setSkin(data.skinId);
+              fighter.setClass(randomClassId());
               fighter.setTeam("red");
               return fighter;
           });
@@ -8027,7 +8047,8 @@
               skin: ["alex", "zombie", "skeleton", "creeper"][Math.floor(Math.random() * 4)],
               weapon: ["mace", "spear", "sword"][Math.floor(Math.random() * 3)],
               weapon2: null,
-              upgrades: {}
+              upgrades: {},
+              cls: randomClassId()
           });
           const slotFor = (player, team, botName) => player
               ? { ...player.info, team, peer: player.peer }
