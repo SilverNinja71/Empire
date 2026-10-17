@@ -4,24 +4,71 @@
 // arrows, and weapon-specific damage & knockback
 // ==========================================
 
-import { CORE_PHYSICS } from './config.js';
+import { CORE_PHYSICS, CLASSES } from './config.js';
 import { sound } from './audio.js';
 
 export class CombatEngine {
     constructor(particleManager) {
         this.particles = particleManager;
+        this.bolts = []; // Lightning class bolts being drawn: { x, y, life }
     }
 
-    // Resolves direct mid-air mace slam
+    // Lightning class: mace slams add 18-22 extra stun frames, and 5% of slams call down a bolt (+20 damage)
+    lightningStun(attacker, defender) {
+        if (attacker.classId !== "lightning") return 0;
+        const cls = CLASSES.lightning;
+        const extra = cls.stunBonusMin + Math.floor(Math.random() * (cls.stunBonusMax - cls.stunBonusMin + 1));
+        this.particles.addFloatingText(defender.x + defender.w / 2, defender.y - 14, `+${extra} stun`, "#ffe14a", false, 1.0);
+        if (Math.random() < cls.boltChance && defender.hp > 0) {
+            const dealt = Math.min(cls.boltDamage, Math.max(0, defender.hp));
+            defender.hp -= cls.boltDamage;
+            defender.stats.damageTaken += dealt;
+            attacker.stats.damageDealt += dealt;
+            defender.lastHitBy = attacker;
+            this.bolts.push({ x: defender.x + defender.w / 2, y: defender.y + defender.h, life: 24 });
+            this.particles.addFloatingText(defender.x + defender.w / 2, defender.y - 30, `LIGHTNING! +${cls.boltDamage}`, "#ffff6e", true, 1.2);
+            this.particles.triggerShake(8, 10);
+        }
+        return extra;
+    }
+
+    // Potionmaster / Pyro: chance-based status effects on every hit (mace, dash or arrow)
+    applyHitEffects(attacker, defender) {
+        if (!attacker || defender.hp <= 0) return;
+        const popup = (text, color, i) => this.particles.addFloatingText(defender.x + defender.w / 2, defender.y - 14 - i * 14, text, color, false, 1.0);
+        let n = 0;
+        if (attacker.classId === "potion") {
+            const cls = CLASSES.potion;
+            if (Math.random() < cls.slowChance) { defender.slowT = cls.slowTime; popup("SLOWED", "#5aa0ff", n++); }
+            if (Math.random() < cls.poisonChance) { defender.poisonT = cls.poisonTime; defender.dotSource = attacker; popup("POISONED", "#50dc50", n++); }
+            if (Math.random() < cls.blindChance) { defender.blindT = cls.blindTime; popup("BLINDED", "#d2d2d2", n++); }
+        } else if (attacker.classId === "pyro") {
+            const cls = CLASSES.pyro;
+            if (Math.random() < cls.fireChance) { defender.fireT = cls.fireTime; defender.dotSource = attacker; popup("ON FIRE!", "#ff6e14", n++); }
+        }
+    }
+
+    // The part of a fighter that can land hits. A big Buddha's body is huge (easy to hit),
+    // but its attacks only reach a little farther than normal.
+    attackBox(f) {
+        if (f.classId === "buddha" && f.big) {
+            const size = 25 * CLASSES.buddha.attackReachScale;
+            return { x: f.x + (f.w - size) / 2, y: f.y + f.h - size, w: size, h: size };
+        }
+        return f;
+    }
+
     // Applies damage and returns how much HP was actually removed (no overkill in stats)
     applyDamage(attacker, defender, amount) {
         const dealt = Math.min(amount, Math.max(0, defender.hp));
         defender.hp -= amount;
         defender.stats.damageTaken += dealt;
         defender.lastHitBy = attacker;
+        this.applyHitEffects(attacker, defender);
         return dealt;
     }
 
+    // Resolves direct mid-air mace slam
     checkAirSlam(attacker, defender, damageMultiplier, stunMultiplier, onDefenderHit = null) {
         if (!attacker.slamming || attacker.dashing) return false;
         if (defender.hp <= 0 || defender.hitCooldown > 0) return false;
@@ -29,18 +76,19 @@ export class CombatEngine {
         if (attacker.team && defender.team && attacker.team === defender.team) return false;
 
         const wStats = attacker.weaponStats || {};
+        const ab = this.attackBox(attacker);
         const slamScale = wStats.slamPower || CORE_PHYSICS.slamHeightScale;
         const slamMaxDmg = wStats.slamMaxDmg || CORE_PHYSICS.slamMaxDamage;
         const hitLaunch = wStats.hitLaunch || CORE_PHYSICS.hitLaunch;
 
         // Bounding box collision
         if (
-            attacker.x < defender.x + defender.w &&
-            attacker.x + attacker.w > defender.x &&
-            attacker.y < defender.y + defender.h &&
-            attacker.y + attacker.h > defender.y
+            ab.x < defender.x + defender.w &&
+            ab.x + ab.w > defender.x &&
+            ab.y < defender.y + defender.h &&
+            ab.y + ab.h > defender.y
         ) {
-            const heightDifference = defender.y - attacker.y;
+            const heightDifference = defender.y - ab.y;
             let slamDamage = CORE_PHYSICS.slamMinDamage + heightDifference * slamScale;
             slamDamage = Math.max(CORE_PHYSICS.slamMinDamage, Math.min(slamMaxDmg, slamDamage));
 
@@ -53,7 +101,7 @@ export class CombatEngine {
             const finalDamage = slamDamage * effDmgMult;
             const dealt = this.applyDamage(attacker, defender, finalDamage);
             defender.hitCooldown = 25;
-            defender.stun = Math.round(CORE_PHYSICS.hitStun * stunMultiplier);
+            defender.stun = Math.round(CORE_PHYSICS.hitStun * stunMultiplier) + this.lightningStun(attacker, defender);
 
             // Cancel defender actions & apply knockback
             defender.slamming = false;
@@ -121,14 +169,14 @@ export class CombatEngine {
 
         if (
             distance <= CORE_PHYSICS.slamRadius &&
-            Math.abs(attacker.y - defender.y) < 40 &&
+            Math.abs((attacker.y + attacker.h) - (defender.y + defender.h)) < 40 && // compare feet (sizes differ)
             defender.hp > 0 &&
             defender.hitCooldown <= 0
         ) {
             const finalDamage = CORE_PHYSICS.slamGroundDamage * damageMultiplier;
             const dealt = this.applyDamage(attacker, defender, finalDamage);
             defender.hitCooldown = 20;
-            defender.stun = Math.round(CORE_PHYSICS.hitStun * stunMultiplier);
+            defender.stun = Math.round(CORE_PHYSICS.hitStun * stunMultiplier) + this.lightningStun(attacker, defender);
 
             defender.slamming = false;
             defender.dashing = false;
@@ -160,17 +208,19 @@ export class CombatEngine {
         if (defender.hp <= 0 || defender.hitCooldown > 0) return false;
         if (attacker.team && defender.team && attacker.team === defender.team) return false;
 
+        const ab = this.attackBox(attacker);
         const wStats = attacker.weaponStats || {};
-        const baseDmg = wStats.dashDamage || CORE_PHYSICS.dashDamage;
+        let baseDmg = wStats.dashDamage || CORE_PHYSICS.dashDamage;
+        if (attacker.classId === "energy") baseDmg *= CLASSES.energy.dashDamageMult;
         const knockMult = wStats.knockbackMult || 1.0;
         const stunBonus = wStats.stunBonus || 0;
         const rangeExtra = (wStats.range && wStats.range > 25) ? (wStats.range - 25) : 0;
 
         if (
-            attacker.x - rangeExtra < defender.x + defender.w &&
-            attacker.x + attacker.w + rangeExtra > defender.x &&
-            attacker.y < defender.y + defender.h &&
-            attacker.y + attacker.h > defender.y
+            ab.x - rangeExtra < defender.x + defender.w &&
+            ab.x + ab.w + rangeExtra > defender.x &&
+            ab.y < defender.y + defender.h &&
+            ab.y + ab.h > defender.y
         ) {
             const finalDamage = baseDmg * damageMultiplier;
             const dealt = this.applyDamage(attacker, defender, finalDamage);

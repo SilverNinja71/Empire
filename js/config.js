@@ -16,6 +16,69 @@ export const GAME_SPEED = 0.85;
 // Walking speed for human players (bots use speed / runSpeed in BOT_SETTINGS)
 export const PLAYER_MOVE_SPEED = 4.2;
 
+// Player classes (press I to pick). Times are in frames (60 = 1 second at full speed).
+export const CLASSES = {
+    normal: {
+        name: "Normal",
+        desc: "No special ability. Balanced."
+    },
+    shadow: {
+        name: "Shadow",
+        desc: "After 22s visible you turn invisible to enemies for 6s: 25% faster and 1.2x damage. When it ends you teleport back to your spawn.",
+        invisCycle: 28 * 60,
+        invisTime: 6 * 60,
+        invisSpeedMult: 1.25,
+        invisDamageMult: 1.2
+    },
+    lightning: {
+        name: "Lightning",
+        desc: "Mace slams stun 6-10 frames longer, and each slam has a 5% chance to call down a lightning bolt for +20 damage.",
+        stunBonusMin: 6,
+        stunBonusMax: 10,
+        boltChance: 0.05,
+        boltDamage: 20
+    },
+    energy: {
+        name: "Energy",
+        desc: "Dash again in the air, with a shorter dash cooldown and stronger dashes (1.15x damage).",
+        dashCooldown: 40,
+        dashDamageMult: 1.15
+    },
+    potion: {
+        name: "Potionmaster",
+        desc: "Your hits: 25% chance to slow (half speed, 3s), 20% to poison (1 damage every 0.5s for 2s), 5% to blind (2s).",
+        slowChance: 0.25, slowTime: 180,
+        poisonChance: 0.2, poisonTime: 120, poisonTick: 30,
+        blindChance: 0.05, blindTime: 120
+    },
+    pyro: {
+        name: "Pyro",
+        desc: "Your hits have an 18% chance to set enemies on fire for 5s: 2 damage per second, and each burn freezes them briefly.",
+        fireChance: 0.18, fireTime: 300, fireTick: 60, fireDamage: 2, fireFreeze: 15
+    },
+    void: {
+        name: "Void Walker",
+        desc: "Every 7-20 seconds you teleport high above a random enemy, ready to slam. No warning.",
+        minDelay: 420,
+        maxDelay: 1200
+    },
+    buddha: {
+        name: "Buddha",
+        desc: "Press B to grow big or shrink back. Only one jump, but it goes higher. While big you deal 1.3x damage at the same speed, but your body is twice as big and much easier to hit.",
+        bigScale: 2,            // body (hitbox) is 2x as big...
+        attackReachScale: 1.4,  // ...but attacks only reach 1.4x as far
+        bigDamageMult: 1.3,
+        toggleCooldown: 30,
+        jumpMult: 1.3
+    }
+};
+
+// Bots get a random class each match
+export function randomClassId() {
+    const ids = Object.keys(CLASSES);
+    return ids[Math.floor(Math.random() * ids.length)];
+}
+
 export const ARENA_CONFIG = {
     width: 800,
     height: 440,             // Taller view so the ground layers are visible

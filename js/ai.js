@@ -25,6 +25,7 @@ export class BotAI {
         this.invisClock = 0;
         this.invisTimer = 0;
         this.sinceHit = 0;
+        this.sizeTimer = 0;
     }
 
     setParams(params) {
@@ -43,6 +44,7 @@ export class BotAI {
         this.invisClock = 0;
         this.invisTimer = 0;
         this.sinceHit = 0;
+        this.sizeTimer = 0;
     }
 
     // Helper: Bot dash initiating
@@ -96,6 +98,12 @@ export class BotAI {
         const playerCenter = targetPlayer.x + targetPlayer.w / 2;
         const botCenter = bot.x + bot.w / 2;
         const distance = playerCenter - botCenter;
+
+        // Buddha bots grow big up close and shrink back down when far away
+        if (bot.classId === "buddha" && --this.sizeTimer <= 0) {
+            if ((Math.abs(distance) < 160) !== !!bot.big) bot.toggleSize();
+            this.sizeTimer = 60 + Math.floor(Math.random() * 120);
+        }
 
         // Predicted distance with lead time
         const predictedDistance = distance + targetPlayer.xVel * P.slamLead;

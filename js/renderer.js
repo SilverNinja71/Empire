@@ -5,7 +5,7 @@
 // and multi-fighter 1v1, 2v2, 5v5 team arena matches
 // ==========================================
 
-import { ARENA_CONFIG, PLATFORMS_CONFIG } from './config.js';
+import { ARENA_CONFIG, PLATFORMS_CONFIG, CLASSES, GAME_SPEED } from './config.js';
 import { weaponIconURL } from './pixel.js';
 
 export class Renderer {
@@ -942,7 +942,8 @@ export class Renderer {
     // ==========================================
     // DRAW FIGHTER (Single, 2v2, or 5v5)
     // ==========================================
-    drawFighter(f, fallbackColor = [120, 40, 190], showOverheadBar = false) {
+    // alpha < 1 draws a faint ghost (an invisible Shadow seen by its own team)
+    drawFighter(f, fallbackColor = [120, 40, 190], showOverheadBar = false, alpha = 1.0) {
         if (f.hp <= 0) return;
 
         const ctx = this.ctx;
@@ -954,11 +955,23 @@ export class Renderer {
         ctx.scale(f.squashX || 1.0, f.squashY || 1.0);
         ctx.translate(-centerX, -centerY);
 
+        // Skins are drawn at 25px; a big Buddha is the same art scaled up
+        const scale = f.w / 25;
+        const df = scale !== 1 ? { ...f, w: 25, h: 25 } : f;
+        ctx.save();
+        if (scale !== 1) {
+            ctx.translate(f.x, f.y);
+            ctx.scale(scale, scale);
+            ctx.translate(-f.x, -f.y);
+        }
+
         // Draw weapon
-        this.drawWeapons(f, 1.0);
+        this.drawWeapons(df, alpha);
 
         // Draw skin / block face
-        this.drawSkin(f, 1.0);
+        this.drawSkin(df, alpha);
+        ctx.restore(); // outlines below use the real (possibly big) size
+        ctx.globalAlpha = alpha;
 
         // Team highlight border and aura (Blue vs Red)
         if (f.team) {
@@ -1134,6 +1147,111 @@ export class Renderer {
     }
 
     // Standard 1v1 HUD
+    // Glows for status effects: burning (pulsing red), poisoned (green), slowed (blue)
+    drawStatusEffects(f) {
+        if (f.hp <= 0) return;
+        const ctx = this.ctx;
+        const pulse = 0.5 + 0.5 * Math.sin(this.frameCount * 0.35);
+        ctx.save();
+        if (f.fireT > 0) {
+            ctx.fillStyle = `rgba(255, ${80 + Math.round(pulse * 60)}, 20, ${0.25 + pulse * 0.25})`;
+            ctx.fillRect(f.x - 3, f.y - 3, f.w + 6, f.h + 6);
+            ctx.fillStyle = "#ffb43a";
+            for (let i = 0; i < 3; i++) {
+                const fx = f.x + ((this.frameCount * 3 + i * 9) % f.w);
+                ctx.fillRect(Math.round(fx), Math.round(f.y - 4 - ((this.frameCount + i * 7) % 8)), 3, 3);
+            }
+        }
+        if (f.poisonT > 0) {
+            ctx.strokeStyle = "rgba(80, 220, 80, 0.85)";
+            ctx.lineWidth = 2;
+            ctx.strokeRect(f.x - 4, f.y - 4, f.w + 8, f.h + 8);
+        }
+        if (f.slowT > 0) {
+            ctx.fillStyle = "rgba(90, 160, 255, 0.3)";
+            ctx.fillRect(f.x, f.y + f.h - 6, f.w, 6);
+        }
+        ctx.restore();
+    }
+
+    // Blocky Minecraft-style lightning bolt from the sky down to (x, y)
+    drawLightningBolt(bolt) {
+        const ctx = this.ctx;
+        const alpha = Math.min(1, bolt.life / 12);
+        ctx.save();
+        ctx.fillStyle = `rgba(255, 255, 255, ${0.25 * alpha})`;
+        ctx.fillRect(-20, -20, this.width + 40, this.height + 40);
+        let x = bolt.x;
+        for (let y = 0; y < bolt.y; y += 12) {
+            const nx = bolt.x + (((y * 37 + bolt.x * 13) % 21) - 10);
+            ctx.fillStyle = `rgba(255, 250, 160, ${alpha})`;
+            ctx.fillRect(Math.round(Math.min(x, nx)) - 3, y, Math.abs(nx - x) + 6, 14);
+            ctx.fillStyle = `rgba(255, 255, 255, ${alpha})`;
+            ctx.fillRect(Math.round(nx) - 1, y, 3, 14);
+            x = nx;
+        }
+        ctx.restore();
+    }
+
+    // Class name + ability status for the local player, above the weapon hotbar
+    drawClassStatus(f) {
+        if (!f || f.hp <= 0) return;
+        const ctx = this.ctx;
+        const secs = (frames) => (frames / (60 * GAME_SPEED)).toFixed(1);
+        let text = f.classId && f.classId !== "normal" ? CLASSES[f.classId].name.toUpperCase() : "";
+        let color = "#ffffff";
+        if (f.classId === "shadow") {
+            const cls = CLASSES.shadow;
+            const t = f.shadowTimer % cls.invisCycle;
+            if (f.invis) {
+                text += ` · INVISIBLE ${secs(cls.invisCycle - t)}s`;
+                color = "#c8a8ff";
+            } else {
+                text += ` · invisible in ${secs(cls.invisCycle - cls.invisTime - t)}s`;
+            }
+        } else if (f.classId === "lightning") {
+            text += " · slams stun longer";
+            color = "#ffe14a";
+        } else if (f.classId === "energy") {
+            text += " · air dash ready";
+            color = "#7ff0ff";
+        } else if (f.classId === "potion") {
+            text += " · hits slow, poison, blind";
+            color = "#9ae66e";
+        } else if (f.classId === "pyro") {
+            text += " · hits can burn";
+            color = "#ff8a3a";
+        } else if (f.classId === "void") {
+            text += " · teleports above enemies";
+            color = "#c08cff";
+        } else if (f.classId === "buddha") {
+            text += f.big ? " · BIG (B to shrink)" : " · B to grow";
+            color = "#ffd27a";
+        }
+        // Status effects on you
+        const status = [];
+        if (f.slowT > 0) status.push("SLOWED");
+        if (f.poisonT > 0) status.push("POISONED");
+        if (f.fireT > 0) status.push("ON FIRE");
+        if (f.blindT > 0) status.push("BLIND");
+        ctx.save();
+        ctx.font = "16px VT323, monospace";
+        ctx.textAlign = "left";
+        ctx.textBaseline = "middle";
+        ctx.strokeStyle = "#000000";
+        ctx.lineWidth = 3;
+        const lines = [];
+        if (status.length) lines.push([status.join(", "), "#ff7675"]);
+        if (text) lines.push([text, color]);
+        lines.reverse().forEach(([line, col], i) => {
+            const y = this.height - 58 - i * 16;
+            ctx.strokeText(line, 14, y);
+            ctx.fillStyle = col;
+            ctx.fillText(line, 14, y);
+        });
+        ctx.restore();
+    }
+
     // Minecraft-style 2-slot hotbar for the local player's loadout (bottom-left)
     drawLoadoutHotbar(f) {
         if (!f || !f.loadout || f.loadout.length < 2) return;

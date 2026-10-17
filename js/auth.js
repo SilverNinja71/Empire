@@ -1,4 +1,5 @@
 import { GOOGLE_CLIENT_ID } from './config.js';
+import { WEAPON_TYPES } from './weapons.js';
 // ==========================================
 // SPEAR-MACE PVP - Authentication, Economy & Profile Manager
 // Handles Google Sign-In, Gold Currency, Minecraft Weapons Arsenal,
@@ -54,8 +55,22 @@ export class AuthManager {
                 if (parsed.gold === undefined) parsed.gold = 300;
                 if (!parsed.equippedWeapon) parsed.equippedWeapon = "mace";
                 if (parsed.secondaryWeapon === undefined) parsed.secondaryWeapon = null;
+                if (!parsed.classId) parsed.classId = "normal";
                 if (!parsed.unlockedWeapons) parsed.unlockedWeapons = ["mace", "spear"];
                 if (!parsed.weaponUpgrades) parsed.weaponUpgrades = {};
+                // Weapons no longer have stats: refund any enchantment upgrades once
+                if (!parsed.upgradesRefunded) {
+                    let refund = 0;
+                    Object.values(WEAPON_TYPES).forEach(w => (w.upgrades || []).forEach(u => {
+                        const lvl = parsed.weaponUpgrades[u.id] || 0;
+                        refund += u.costPerLevel * lvl * (lvl + 1) / 2;
+                    }));
+                    parsed.gold = (parsed.gold || 0) + refund;
+                    parsed.weaponUpgrades = {};
+                    parsed.upgradesRefunded = true;
+                    // Save right away so a reload can never refund twice
+                    localStorage.setItem(STORAGE_KEY, JSON.stringify(parsed));
+                }
                 if (!parsed.skinId) parsed.skinId = "steve";
                 if (!parsed.unlockedSkins) parsed.unlockedSkins = ["steve", "alex"];
                 if (parsed.friends === undefined) {
@@ -92,6 +107,7 @@ export class AuthManager {
             gold: 300, // 300 starter gold
             equippedWeapon: "mace",
             secondaryWeapon: null, // second loadout slot (swap with Q in matches)
+            classId: "normal", // Normal / Shadow / Lightning / Energy
             unlockedWeapons: ["mace", "spear"],
             weaponUpgrades: {},
             skinId: "steve",
@@ -276,6 +292,11 @@ export class AuthManager {
         }
         this.saveUser();
         return true;
+    }
+
+    setClass(classId) {
+        this.user.classId = classId;
+        this.saveUser();
     }
 
     clearSecondaryWeapon() {

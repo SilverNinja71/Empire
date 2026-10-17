@@ -3,7 +3,7 @@
 // Handles physics, weapons, skin customization, and multi-fighter combat
 // ==========================================
 
-import { CORE_PHYSICS, ARENA_CONFIG } from './config.js';
+import { CORE_PHYSICS, ARENA_CONFIG, CLASSES } from './config.js';
 import { sound } from './audio.js';
 import { getComputedWeaponStats } from './weapons.js';
 
@@ -31,6 +31,10 @@ export class Fighter {
         this.skinId = "steve";
         this.arrowCooldown = 0;
         this.aimAngle = null; // bow aim (radians) set from the mouse; null = shoot straight ahead
+
+        // Class (see CLASSES in config.js)
+        this.classId = "normal";
+        this.resetClassState();
 
         // State Flags
         this.onGround = false;
@@ -80,6 +84,72 @@ export class Fighter {
         this.weaponStats = getComputedWeaponStats(weaponId, upgradeLevels);
     }
 
+    setClass(classId) {
+        this.classId = CLASSES[classId] ? classId : "normal";
+        this.resetClassState();
+    }
+
+    // Clears class timers and status effects (new match, respawn, class change)
+    resetClassState() {
+        this.shadowTimer = 0;
+        this.invis = false;
+        this.voidTimer = this.nextVoidDelay();
+        this.sizeCooldown = 0;
+        this.setBig(false);
+        // Status effects from enemy Potionmaster / Pyro hits
+        this.slowT = 0;
+        this.poisonT = 0;
+        this.blindT = 0;
+        this.fireT = 0;
+        this.freezeT = 0;
+        this.dotSource = null;
+    }
+
+    nextVoidDelay() {
+        const v = CLASSES.void;
+        return v.minDelay + Math.floor(Math.random() * (v.maxDelay - v.minDelay + 1));
+    }
+
+    // Walking speed multiplier from the class (slow is applied in physics for everyone)
+    moveSpeedMult() {
+        if (this.classId === "shadow" && this.invis) return CLASSES.shadow.invisSpeedMult;
+        return 1;
+    }
+
+    // Damage multiplier from the class (invisible Shadow, big Buddha)
+    classDamageMult() {
+        if (this.classId === "shadow" && this.invis) return CLASSES.shadow.invisDamageMult;
+        if (this.classId === "buddha" && this.big) return CLASSES.buddha.bigDamageMult;
+        return 1;
+    }
+
+    // Buddha: switch between normal and big size (feet stay on the ground)
+    setBig(big) {
+        const size = big ? 25 * CLASSES.buddha.bigScale : 25;
+        if (this.w !== undefined && this.w !== size) {
+            const cx = this.x + this.w / 2;
+            const feet = this.y + this.h;
+            this.w = size;
+            this.h = size;
+            this.x = Math.max(0, Math.min(ARENA_CONFIG.width - size, cx - size / 2));
+            this.y = feet - size;
+        } else {
+            this.w = size;
+            this.h = size;
+        }
+        this.big = big;
+    }
+
+    toggleSize() {
+        if (this.classId !== "buddha" || this.hp <= 0 || this.sizeCooldown > 0) return false;
+        this.setBig(!this.big);
+        this.sizeCooldown = CLASSES.buddha.toggleCooldown;
+        this.squashX = 1.2;
+        this.squashY = 0.85;
+        sound.playSlamStart();
+        return true;
+    }
+
     // Two-weapon loadout: primary + optional secondary, swapped with swapWeapon()
     setLoadout(primary, secondary = null, upgradeLevels = {}) {
         this.loadout = secondary && secondary !== primary ? [primary, secondary] : [primary];
@@ -110,8 +180,11 @@ export class Fighter {
     }
 
     reset(x, facing, maxHp = 100) {
+        this.resetClassState();
         this.x = x;
         this.y = 300;
+        this.spawnX = x;
+        this.spawnY = 300;
         this.xVel = 0;
         this.yVel = 0;
         this.onGround = false;
@@ -161,8 +234,13 @@ export class Fighter {
     }
 
     respawn(x, y) {
+        const classId = this.classId;
+        this.resetClassState();
+        this.classId = classId;
         this.x = x;
         this.y = y;
+        this.spawnX = x;
+        this.spawnY = y;
         this.xVel = 0;
         this.yVel = 0;
         this.hp = this.maxHp;
@@ -181,16 +259,20 @@ export class Fighter {
 
     // Jump / Double Jump execution with Input Buffering
     jump() {
+        if (this.freezeT > 0) return false;
         if (this.stun > 0 || this.dashing) {
             // Buffer jump while recovering from stun or dash
             this.jumpBuffer = 6;
             return false;
         }
 
-        if (this.onGround || this.coyoteTimer > 0 || this.jumpsLeft > 0) {
+        // Buddha can only jump once (no double jump)
+        const canAirJump = this.jumpsLeft > 0 && this.classId !== "buddha";
+        if (this.onGround || this.coyoteTimer > 0 || canAirJump) {
             const isDoubleJump = !this.onGround && this.coyoteTimer <= 0;
 
-            this.yVel = CORE_PHYSICS.jumpPower;
+            // Buddha's single jump is higher to make up for having no double jump
+            this.yVel = CORE_PHYSICS.jumpPower * (this.classId === "buddha" ? CLASSES.buddha.jumpMult : 1);
 
             if (isDoubleJump) {
                 this.jumpsLeft--;
@@ -216,13 +298,19 @@ export class Fighter {
 
     // Dash / Weapon Attack execution with Input Buffering
     dash(customSpeed = null, isAttack = true, customCooldown = null, arrowManager = null) {
+        if (this.freezeT > 0) return false;
         if (this.stun > 0) {
             if (this.stun <= 5) this.dashBuffer = 6;
             return false;
         }
 
         const speed = customSpeed ?? (this.weaponStats.dashSpeed || CORE_PHYSICS.dashSpeed);
-        const cooldown = customCooldown ?? (this.weaponStats.attackCooldown || CORE_PHYSICS.dashCooldown);
+        let cooldown = customCooldown ?? (this.weaponStats.attackCooldown || CORE_PHYSICS.dashCooldown);
+        if (this.classId === "energy") {
+            // Energy: air dashes recharge (no one-dash-per-jump limit) on a 0.75s cooldown
+            cooldown = Math.max(cooldown, CLASSES.energy.dashCooldown);
+            if (!this.dashing) this.dashReady = true;
+        }
         const duration = this.weaponStats.dashDistance || CORE_PHYSICS.dashTime;
 
         // If equipped with Bow, dash key shoots an arrow!
@@ -241,7 +329,7 @@ export class Fighter {
                     this.facing,
                     this.id,
                     this.team,
-                    this.weaponStats.arrowDamage || 30,
+                    (this.weaponStats.arrowDamage || 30) * this.classDamageMult(),
                     this.weaponStats.arrowSpeed || 16,
                     this.weaponStats.arrowKnockback || 1.0,
                     aimed ? aim : null
@@ -299,6 +387,7 @@ export class Fighter {
 
     // Slam execution
     slam() {
+        if (this.freezeT > 0) return false;
         if (this.stun > 0 || this.onGround || this.slamming || this.dashing) return false;
 
         this.slamming = true;
@@ -346,6 +435,60 @@ export class Fighter {
         return false;
     }
 
+    // Per-frame class abilities and status effects (runs on whoever simulates the match)
+    updateClassAndStatus() {
+        if (this.sizeCooldown > 0) this.sizeCooldown--;
+
+        // Shadow: 20s visible, then 8s invisible; when it ends, teleport back to spawn
+        if (this.classId === "shadow") {
+            const cls = CLASSES.shadow;
+            const wasInvis = this.invis;
+            this.shadowTimer++;
+            this.invis = (this.shadowTimer % cls.invisCycle) >= cls.invisCycle - cls.invisTime;
+            if (wasInvis && !this.invis && this.spawnX !== undefined) {
+                this.x = this.spawnX;
+                this.y = this.spawnY;
+                this.xVel = 0;
+                this.yVel = 0;
+                this.dashing = false;
+                this.slamming = false;
+                this.onGround = false;
+            }
+        } else {
+            this.invis = false;
+        }
+
+        // Status effects
+        if (this.slowT > 0) this.slowT--;
+        if (this.blindT > 0) this.blindT--;
+        if (this.freezeT > 0) this.freezeT--;
+        if (this.poisonT > 0) {
+            this.poisonT--;
+            if (this.poisonT % CLASSES.potion.poisonTick === 0) this.takeTickDamage(1);
+        }
+        if (this.fireT > 0) {
+            const cls = CLASSES.pyro;
+            this.fireT--;
+            if (this.fireT % cls.fireTick === 0) {
+                this.takeTickDamage(cls.fireDamage);
+                this.freezeT = cls.fireFreeze;
+                this.dashing = false;
+                this.dashAttack = false;
+            }
+        }
+    }
+
+    // Poison / burn damage, credited to whoever applied it
+    takeTickDamage(amount) {
+        const dealt = Math.min(amount, Math.max(0, this.hp));
+        this.hp -= amount;
+        this.stats.damageTaken += dealt;
+        if (this.dotSource) {
+            this.dotSource.stats.damageDealt += dealt;
+            this.lastHitBy = this.dotSource;
+        }
+    }
+
     // Core physics step
     updatePhysics(platforms, particleManager = null, arrowManager = null) {
         if (this.hp <= 0) return;
@@ -358,6 +501,8 @@ export class Fighter {
         }
 
         if (this.swapCooldown > 0) this.swapCooldown--;
+
+        this.updateClassAndStatus();
 
         // Arrow cooldown countdown
         if (this.arrowCooldown > 0) {
@@ -443,8 +588,12 @@ export class Fighter {
         const prevBottom = this.y + this.h;
         const wasGrounded = this.onGround;
 
+        // Burn freeze: can't move. Slow: half speed (dashes and knockback are unaffected)
+        if (this.freezeT > 0 && !this.dashing && this.stun <= 0) this.xVel = 0;
+        const slowMult = this.slowT > 0 && !this.dashing && this.stun <= 0 ? 0.5 : 1;
+
         // Apply movement
-        this.x += this.xVel;
+        this.x += this.xVel * slowMult;
         this.y += this.yVel;
 
         // Coyote time countdown
