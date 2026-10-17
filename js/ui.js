@@ -657,7 +657,7 @@ export class UIManager {
         document.getElementById("lo-done").onclick = () => this.closeLoadoutModal();
         document.getElementById("lo-open-shop").onclick = () => {
             this.closeLoadoutModal();
-            this.openInventoryModal("weapons");
+            this.openInventoryModal("skins");
         };
         const w1 = document.getElementById("lo-weapon1");
         const w2 = document.getElementById("lo-weapon2");

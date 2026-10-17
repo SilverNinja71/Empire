@@ -1031,7 +1031,7 @@
           name: "Minecraft Mace",
           icon: "",
           category: "Heavy Impact",
-          desc: "Signature weapon. Height-scaled slam damage with orbital launches and ground shockwaves.",
+          desc: "The only weapon whose slams do damage (more from higher up). Every hit launches you back into the air.",
           baseCost: 0, // Default starter weapon
           unlockedByDefault: true,
           stats: {
@@ -1086,7 +1086,7 @@
               damage: 20,
               dashSpeed: 24,
               dashDistance: 8,
-              dashDamage: 22,
+              dashDamage: 34, // slams don't hurt without a mace, so dashes hit harder
               slamPower: 0.8,
               slamMaxDmg: 110,
               hitLaunch: -10,
@@ -1126,14 +1126,14 @@
           name: "Diamond Sword",
           icon: "",
           category: "Blade Slice",
-          desc: "Shorter, precision dash slice that deals massive swift slash damage.",
+          desc: "Long, fast dash slice that deals heavy slash damage.",
           baseCost: 700,
           unlockedByDefault: false,
           stats: {
               damage: 32,
-              dashSpeed: 16,
-              dashDistance: 4, // shorter dash
-              dashDamage: 38, // higher damage!
+              dashSpeed: 22,
+              dashDistance: 7,
+              dashDamage: 40, // higher damage!
               slamPower: 0.85,
               slamMaxDmg: 120,
               hitLaunch: -9,
@@ -1173,18 +1173,18 @@
           name: "Steve Bare Fists",
           icon: "",
           category: "Martial Brawl",
-          desc: "Pure close-quarters Steve punches! Does brutal damage in hand-to-hand combat.",
+          desc: "Close-range punches: two hits win a fight, but they recharge slowly.",
           baseCost: 300,
           unlockedByDefault: false,
           stats: {
               damage: 42,
               dashSpeed: 14,
               dashDistance: 3, // quick lunge
-              dashDamage: 45, // brutal fist strike!
+              dashDamage: 51, // brutal fist strike: two hits wins
               slamPower: 0.7,
               slamMaxDmg: 100,
               hitLaunch: -11,
-              attackCooldown: 22, // ultra fast combo rate
+              attackCooldown: 45, // slower, since two punches win a fight
               range: 22
           },
           upgrades: [
@@ -1228,9 +1228,9 @@
               dashSpeed: 12,
               dashDistance: 3,
               dashDamage: 15,
-              arrowDamage: 30,
+              arrowDamage: 45,
               arrowSpeed: 16,
-              reloadTime: 45, // frames between shots (0.75s)
+              reloadTime: 35, // frames between shots
               slamPower: 0.7,
               slamMaxDmg: 95,
               hitLaunch: -8,
@@ -1737,6 +1737,18 @@
                       // Save right away so a reload can never refund twice
                       localStorage.setItem(STORAGE_KEY, JSON.stringify(parsed));
                   }
+                  // Every weapon is free now: refund weapons bought with gold, once
+                  if (!parsed.weaponsFree) {
+                      let refund = 0;
+                      parsed.unlockedWeapons.forEach(id => {
+                          const w = WEAPON_TYPES[id];
+                          if (w && !w.unlockedByDefault) refund += w.baseCost;
+                      });
+                      parsed.gold = (parsed.gold || 0) + refund;
+                      parsed.unlockedWeapons = Object.keys(WEAPON_TYPES);
+                      parsed.weaponsFree = true;
+                      localStorage.setItem(STORAGE_KEY, JSON.stringify(parsed));
+                  }
                   if (!parsed.skinId) parsed.skinId = "steve";
                   if (!parsed.unlockedSkins) parsed.unlockedSkins = ["steve", "alex"];
                   if (parsed.friends === undefined) {
@@ -1774,7 +1786,7 @@
               equippedWeapon: "mace",
               secondaryWeapon: null, // second loadout slot (swap with Q in matches)
               classId: "normal", // Normal / Shadow / Lightning / Energy
-              unlockedWeapons: ["mace", "spear"],
+              unlockedWeapons: Object.keys(WEAPON_TYPES), // every weapon is free
               weaponUpgrades: {},
               skinId: "steve",
               unlockedSkins: ["steve", "alex"],
@@ -3488,7 +3500,7 @@
   
           const success = bot.dash(this.params.dashSpeed, attack, this.params.botDashCooldown);
           if (success) {
-              this.dashTimerAI = this.params.dashAIDelay;
+              this.dashTimerAI = (this.bot.weaponId === "mace" ? this.params : this.dashStyleParams()).dashAIDelay;
           }
           return success;
       }
@@ -3505,9 +3517,26 @@
           }
       }
   
+      // Slams only hurt with a mace, so bots with other weapons dash in much more often
+      dashStyleParams() {
+          const P = this.params;
+          if (this._dashFor !== P) {
+              this._dashFor = P;
+              this._dashParams = {
+                  ...P,
+                  dashAttackChance: Math.min(90, P.dashAttackChance * 2),
+                  dashAttackHeight: P.dashAttackHeight + 60,
+                  dashAttackRange: P.dashAttackRange * 1.3,
+                  randomDashChance: P.randomDashChance * 3,
+                  dashAIDelay: Math.round(P.dashAIDelay / 2)
+              };
+          }
+          return this._dashParams;
+      }
+  
       update(targetPlayer) {
           const bot = this.bot;
-          const P = this.params;
+          const P = bot.weaponId === "mace" ? this.params : this.dashStyleParams();
   
           if (bot.hp <= 0) return;
   
@@ -3694,6 +3723,7 @@
   
               // ---------- Slam ----------
               if (
+                  bot.weaponId === "mace" && // other weapons don't hurt when slamming
                   !bot.onGround &&
                   !bot.slamming &&
                   !bot.dashing &&
@@ -3824,9 +3854,20 @@
           return dealt;
       }
   
+      // Mace: every hit sends the attacker flying back up into the air, ready to slam again
+      maceLaunch(attacker) {
+          if (attacker.weaponId !== "mace") return;
+          attacker.slamming = false;
+          attacker.onGround = false;
+          attacker.yVel = (attacker.weaponStats && attacker.weaponStats.hitLaunch) || CORE_PHYSICS.hitLaunch;
+          attacker.dashReady = true;
+          attacker.jumpsLeft = 1;
+      }
+  
       // Resolves direct mid-air mace slam
       checkAirSlam(attacker, defender, damageMultiplier, stunMultiplier, onDefenderHit = null) {
           if (!attacker.slamming || attacker.dashing) return false;
+          if (attacker.weaponId !== "mace") return false; // only the mace hurts when slamming down
           if (defender.hp <= 0 || defender.hitCooldown > 0) return false;
           // Friendly fire protection
           if (attacker.team && defender.team && attacker.team === defender.team) return false;
@@ -3835,7 +3876,6 @@
           const ab = this.attackBox(attacker);
           const slamScale = wStats.slamPower || CORE_PHYSICS.slamHeightScale;
           const slamMaxDmg = wStats.slamMaxDmg || CORE_PHYSICS.slamMaxDamage;
-          const hitLaunch = wStats.hitLaunch || CORE_PHYSICS.hitLaunch;
   
           // Bounding box collision
           if (
@@ -3868,9 +3908,7 @@
               defender.yVel = -7;
   
               // Attacker bounces up into the air
-              attacker.slamming = false;
-              attacker.yVel = hitLaunch;
-              attacker.dashReady = true;
+              this.maceLaunch(attacker);
   
               attacker.squashX = 0.8;
               attacker.squashY = 1.3;
@@ -3924,6 +3962,7 @@
           attacker.jumpsLeft = 2;
   
           if (
+              attacker.weaponId === "mace" && // only the mace hurts when slamming down
               distance <= CORE_PHYSICS.slamRadius &&
               Math.abs((attacker.y + attacker.h) - (defender.y + defender.h)) < 40 && // compare feet (sizes differ)
               defender.hp > 0 &&
@@ -3946,6 +3985,8 @@
               }
   
               if (onDefenderHit) onDefenderHit(finalDamage, attacker, defender);
+  
+              this.maceLaunch(attacker);
   
               sound.playSlamHit(0.4);
               this.particles.addHitSparks(defenderCenter, defender.y + defender.h / 2, 12, "#ffaa00");
@@ -3997,6 +4038,8 @@
               if (attacker.onGround && attacker.dashCooldown <= 0) {
                   attacker.dashReady = true;
               }
+  
+              this.maceLaunch(attacker);
   
               attacker.stats.damageDealt += dealt;
               attacker.stats.dashesLanded++;
@@ -7631,7 +7674,7 @@
           document.getElementById("lo-done").onclick = () => this.closeLoadoutModal();
           document.getElementById("lo-open-shop").onclick = () => {
               this.closeLoadoutModal();
-              this.openInventoryModal("weapons");
+              this.openInventoryModal("skins");
           };
           const w1 = document.getElementById("lo-weapon1");
           const w2 = document.getElementById("lo-weapon2");

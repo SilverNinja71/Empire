@@ -71,6 +71,18 @@ export class AuthManager {
                     // Save right away so a reload can never refund twice
                     localStorage.setItem(STORAGE_KEY, JSON.stringify(parsed));
                 }
+                // Every weapon is free now: refund weapons bought with gold, once
+                if (!parsed.weaponsFree) {
+                    let refund = 0;
+                    parsed.unlockedWeapons.forEach(id => {
+                        const w = WEAPON_TYPES[id];
+                        if (w && !w.unlockedByDefault) refund += w.baseCost;
+                    });
+                    parsed.gold = (parsed.gold || 0) + refund;
+                    parsed.unlockedWeapons = Object.keys(WEAPON_TYPES);
+                    parsed.weaponsFree = true;
+                    localStorage.setItem(STORAGE_KEY, JSON.stringify(parsed));
+                }
                 if (!parsed.skinId) parsed.skinId = "steve";
                 if (!parsed.unlockedSkins) parsed.unlockedSkins = ["steve", "alex"];
                 if (parsed.friends === undefined) {
@@ -108,7 +120,7 @@ export class AuthManager {
             equippedWeapon: "mace",
             secondaryWeapon: null, // second loadout slot (swap with Q in matches)
             classId: "normal", // Normal / Shadow / Lightning / Energy
-            unlockedWeapons: ["mace", "spear"],
+            unlockedWeapons: Object.keys(WEAPON_TYPES), // every weapon is free
             weaponUpgrades: {},
             skinId: "steve",
             unlockedSkins: ["steve", "alex"],
