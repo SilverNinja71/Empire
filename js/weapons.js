@@ -9,7 +9,7 @@ export const WEAPON_TYPES = {
         name: "Minecraft Mace",
         icon: "",
         category: "Heavy Impact",
-        desc: "Signature weapon. Height-scaled slam damage with orbital launches and ground shockwaves.",
+        desc: "The only weapon whose slams do damage (more from higher up). Every hit launches you back into the air.",
         baseCost: 0, // Default starter weapon
         unlockedByDefault: true,
         stats: {
@@ -64,7 +64,7 @@ export const WEAPON_TYPES = {
             damage: 20,
             dashSpeed: 24,
             dashDistance: 8,
-            dashDamage: 22,
+            dashDamage: 34, // slams don't hurt without a mace, so dashes hit harder
             slamPower: 0.8,
             slamMaxDmg: 110,
             hitLaunch: -10,
@@ -104,14 +104,14 @@ export const WEAPON_TYPES = {
         name: "Diamond Sword",
         icon: "",
         category: "Blade Slice",
-        desc: "Shorter, precision dash slice that deals massive swift slash damage.",
+        desc: "Long, fast dash slice that deals heavy slash damage.",
         baseCost: 700,
         unlockedByDefault: false,
         stats: {
             damage: 32,
-            dashSpeed: 16,
-            dashDistance: 4, // shorter dash
-            dashDamage: 38, // higher damage!
+            dashSpeed: 22,
+            dashDistance: 7,
+            dashDamage: 40, // higher damage!
             slamPower: 0.85,
             slamMaxDmg: 120,
             hitLaunch: -9,
@@ -151,18 +151,18 @@ export const WEAPON_TYPES = {
         name: "Steve Bare Fists",
         icon: "",
         category: "Martial Brawl",
-        desc: "Pure close-quarters Steve punches! Does brutal damage in hand-to-hand combat.",
+        desc: "Close-range punches: two hits win a fight, but they recharge slowly.",
         baseCost: 300,
         unlockedByDefault: false,
         stats: {
             damage: 42,
             dashSpeed: 14,
             dashDistance: 3, // quick lunge
-            dashDamage: 45, // brutal fist strike!
+            dashDamage: 51, // brutal fist strike: two hits wins
             slamPower: 0.7,
             slamMaxDmg: 100,
             hitLaunch: -11,
-            attackCooldown: 22, // ultra fast combo rate
+            attackCooldown: 45, // slower, since two punches win a fight
             range: 22
         },
         upgrades: [
@@ -206,9 +206,9 @@ export const WEAPON_TYPES = {
             dashSpeed: 12,
             dashDistance: 3,
             dashDamage: 15,
-            arrowDamage: 30,
+            arrowDamage: 45,
             arrowSpeed: 16,
-            reloadTime: 45, // frames between shots (0.75s)
+            reloadTime: 35, // frames between shots
             slamPower: 0.7,
             slamMaxDmg: 95,
             hitLaunch: -8,

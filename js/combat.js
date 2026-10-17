@@ -68,9 +68,20 @@ export class CombatEngine {
         return dealt;
     }
 
+    // Mace: every hit sends the attacker flying back up into the air, ready to slam again
+    maceLaunch(attacker) {
+        if (attacker.weaponId !== "mace") return;
+        attacker.slamming = false;
+        attacker.onGround = false;
+        attacker.yVel = (attacker.weaponStats && attacker.weaponStats.hitLaunch) || CORE_PHYSICS.hitLaunch;
+        attacker.dashReady = true;
+        attacker.jumpsLeft = 1;
+    }
+
     // Resolves direct mid-air mace slam
     checkAirSlam(attacker, defender, damageMultiplier, stunMultiplier, onDefenderHit = null) {
         if (!attacker.slamming || attacker.dashing) return false;
+        if (attacker.weaponId !== "mace") return false; // only the mace hurts when slamming down
         if (defender.hp <= 0 || defender.hitCooldown > 0) return false;
         // Friendly fire protection
         if (attacker.team && defender.team && attacker.team === defender.team) return false;
@@ -79,7 +90,6 @@ export class CombatEngine {
         const ab = this.attackBox(attacker);
         const slamScale = wStats.slamPower || CORE_PHYSICS.slamHeightScale;
         const slamMaxDmg = wStats.slamMaxDmg || CORE_PHYSICS.slamMaxDamage;
-        const hitLaunch = wStats.hitLaunch || CORE_PHYSICS.hitLaunch;
 
         // Bounding box collision
         if (
@@ -112,9 +122,7 @@ export class CombatEngine {
             defender.yVel = -7;
 
             // Attacker bounces up into the air
-            attacker.slamming = false;
-            attacker.yVel = hitLaunch;
-            attacker.dashReady = true;
+            this.maceLaunch(attacker);
 
             attacker.squashX = 0.8;
             attacker.squashY = 1.3;
@@ -168,6 +176,7 @@ export class CombatEngine {
         attacker.jumpsLeft = 2;
 
         if (
+            attacker.weaponId === "mace" && // only the mace hurts when slamming down
             distance <= CORE_PHYSICS.slamRadius &&
             Math.abs((attacker.y + attacker.h) - (defender.y + defender.h)) < 40 && // compare feet (sizes differ)
             defender.hp > 0 &&
@@ -190,6 +199,8 @@ export class CombatEngine {
             }
 
             if (onDefenderHit) onDefenderHit(finalDamage, attacker, defender);
+
+            this.maceLaunch(attacker);
 
             sound.playSlamHit(0.4);
             this.particles.addHitSparks(defenderCenter, defender.y + defender.h / 2, 12, "#ffaa00");
@@ -241,6 +252,8 @@ export class CombatEngine {
             if (attacker.onGround && attacker.dashCooldown <= 0) {
                 attacker.dashReady = true;
             }
+
+            this.maceLaunch(attacker);
 
             attacker.stats.damageDealt += dealt;
             attacker.stats.dashesLanded++;

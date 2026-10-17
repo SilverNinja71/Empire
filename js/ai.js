@@ -62,7 +62,7 @@ export class BotAI {
 
         const success = bot.dash(this.params.dashSpeed, attack, this.params.botDashCooldown);
         if (success) {
-            this.dashTimerAI = this.params.dashAIDelay;
+            this.dashTimerAI = (this.bot.weaponId === "mace" ? this.params : this.dashStyleParams()).dashAIDelay;
         }
         return success;
     }
@@ -79,9 +79,26 @@ export class BotAI {
         }
     }
 
+    // Slams only hurt with a mace, so bots with other weapons dash in much more often
+    dashStyleParams() {
+        const P = this.params;
+        if (this._dashFor !== P) {
+            this._dashFor = P;
+            this._dashParams = {
+                ...P,
+                dashAttackChance: Math.min(90, P.dashAttackChance * 2),
+                dashAttackHeight: P.dashAttackHeight + 60,
+                dashAttackRange: P.dashAttackRange * 1.3,
+                randomDashChance: P.randomDashChance * 3,
+                dashAIDelay: Math.round(P.dashAIDelay / 2)
+            };
+        }
+        return this._dashParams;
+    }
+
     update(targetPlayer) {
         const bot = this.bot;
-        const P = this.params;
+        const P = bot.weaponId === "mace" ? this.params : this.dashStyleParams();
 
         if (bot.hp <= 0) return;
 
@@ -268,6 +285,7 @@ export class BotAI {
 
             // ---------- Slam ----------
             if (
+                bot.weaponId === "mace" && // other weapons don't hurt when slamming
                 !bot.onGround &&
                 !bot.slamming &&
                 !bot.dashing &&
