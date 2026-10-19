@@ -3429,3 +3429,8 @@ input, textarea, .selectable {
 .hidden {
     display: none !important;
 }
+
+/* Player account (shared with Penguin Life) */
+.acct-transfer { margin-top: 8px; color: var(--text-muted); font-size: 13px; }
+.acct-transfer summary { cursor: pointer; }
+.acct-transfer textarea { width: 100%; box-sizing: border-box; margin: 6px 0; font-family: monospace; font-size: 12px; resize: vertical; }

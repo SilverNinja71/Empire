@@ -44,6 +44,15 @@ export class AuthManager {
         this.user = this.loadUser();
         this.listeners = [];
         this.initGoogleClient();
+        // Penguin Life shares this account: pick up gold/name changes made in its tab
+        if (typeof window !== "undefined") {
+            window.addEventListener("storage", (e) => {
+                if (e.key === STORAGE_KEY && e.newValue) {
+                    this.user = this.loadUser();
+                    this.notifyListeners();
+                }
+            });
+        }
     }
 
     loadUser() {
@@ -228,6 +237,10 @@ export class AuthManager {
     }
 
     setUsername(newUsername) {
+        // Logged in to a player account: the username is the account's name
+        if (typeof window !== "undefined" && window.GameAccounts && window.GameAccounts.current()) {
+            return { success: false, error: "Your username is your account name. Make a new account to use a different one." };
+        }
         const trimmed = (newUsername || "").trim();
         if (trimmed.length < 2) {
             return { success: false, error: "Username must be at least 2 characters." };
