@@ -455,10 +455,86 @@ export class UIManager {
         sound.playClick();
     }
 
+    // Player accounts shared with Penguin Life (../shared/accounts.js).
+    // After logging in or out the page reloads so the right save is used.
+    renderLocalAccount() {
+        const box = document.getElementById("auth-local-section");
+        if (!box) return;
+        const A = window.GameAccounts;
+        if (!A) {
+            box.innerHTML = `<p class="auth-sec-desc">Accounts aren't available in this copy of the game.</p>`;
+            return;
+        }
+        const esc = (t) => String(t).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+        const cur = A.current();
+        if (cur) {
+            box.innerHTML = `
+                <p class="auth-sec-desc">Logged in as <b>${esc(cur.username)}</b>. The same account works in Penguin Life, where you can also switch players or move to another device.</p>
+                <div class="username-input-row">
+                    <button id="btn-acct-logout" class="btn-ctrl" type="button">Log Out</button>
+                </div>
+            `;
+            document.getElementById("btn-acct-logout").onclick = () => {
+                if (!confirm("Log out of " + cur.username + "? Your progress stays saved in the account.")) return;
+                A.logOut();
+                location.reload();
+            };
+            return;
+        }
+        box.innerHTML = `
+            <p class="auth-sec-desc">Playing as a guest. Log in, or make an account to keep your progress safe (it works in Penguin Life too).</p>
+            <div class="username-input-row">
+                <input type="text" id="acct-name" class="auth-input" placeholder="Username" maxlength="16" autocomplete="username">
+                <input type="password" id="acct-pass" class="auth-input" placeholder="Password" maxlength="64" autocomplete="current-password">
+            </div>
+            <div class="username-input-row">
+                <button id="btn-acct-login" class="btn-ctrl" type="button">Log In</button>
+                <button id="btn-acct-signup" class="btn-ctrl btn-save-name" type="button">Make Account</button>
+            </div>
+            <details class="acct-transfer">
+                <summary>Use a transfer code from another device</summary>
+                <textarea id="acct-code" class="auth-input" rows="3" placeholder="Paste the code here, type that account's password above, then press Add"></textarea>
+                <button id="btn-acct-import" class="btn-ctrl" type="button">Add Account</button>
+            </details>
+            <div id="acct-feedback" class="form-feedback"></div>
+        `;
+        const say = (t) => {
+            const f = document.getElementById("acct-feedback");
+            f.textContent = t || "";
+            f.className = "form-feedback" + (t ? " error" : "");
+        };
+        const val = (id) => document.getElementById(id).value;
+        document.getElementById("btn-acct-login").onclick = async () => {
+            const r = await A.logIn(val("acct-name"), val("acct-pass"));
+            if (!r.ok) return say(r.error);
+            location.reload();
+        };
+        document.getElementById("btn-acct-signup").onclick = async () => {
+            const name = val("acct-name"), pass = val("acct-pass");
+            const err = A.checkName(name) || A.checkPassword(pass);
+            if (err) return say(err);
+            if (prompt("Type the password again to make sure it's right:") !== pass) return say("The passwords didn't match. Try again.");
+            const r = await A.signUp(name, pass, true);
+            if (!r.ok) return say(r.error);
+            location.reload();
+        };
+        document.getElementById("btn-acct-import").onclick = async () => {
+            let r = await A.importCode(val("acct-code"), val("acct-pass"), false);
+            if (r.needConfirm) {
+                if (!confirm("There's already an account called " + r.username + " on this device. Replace it with the one from the code?")) return;
+                r = await A.importCode(val("acct-code"), val("acct-pass"), true);
+            }
+            if (!r.ok) return say(r.error);
+            location.reload();
+        };
+    }
+
     renderAuthModalContent() {
         const user = auth.getUser();
         const isGoogle = user.authProvider === "google";
         const rankTitle = auth.getRankTitle();
+
+        this.renderLocalAccount();
 
         // Google Auth Section
         const googleSection = document.getElementById("auth-google-section");

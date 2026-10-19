@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Spear-Mace PVP - Local Game Server
-Serves the game locally and opens it in your default web browser.
+Local Game Server for Spear-Mace PVP and Penguin Life
+Serves both games locally (same origin, so they share one account) and opens it in your default web browser.
 """
 
 import http.server
@@ -34,11 +34,12 @@ def run():
         print("Error: Could not bind to any port from 8080 to 8100.")
         sys.exit(1)
 
-    url = f"http://localhost:{port}/index.html"
+    url = f"http://localhost:{port}/"
     print("=" * 55)
-    print("⚔️  SPEAR-MACE PVP - Game Server Running!")
+    print("⚔️🐧 SPEAR-MACE PVP + PENGUIN LIFE - Server Running!")
     print(f"👉 Local URL: {url}")
-    print("⌨️  Controls: WASD/Arrows to move, Space to Dash, Down/S to Slam")
+    print(f"   Mace PVP:     {url}mace-pvp/")
+    print(f"   Penguin Life: {url}penguin-life/")
     print("🛑 Press Ctrl+C to stop the server.")
     print("=" * 55)
 
