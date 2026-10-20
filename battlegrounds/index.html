@@ -256,7 +256,13 @@ body.touch .mini{height:52px}
   body.touch .slot .t{font-size:18px}
   body.touch .slot .n{font-size:8px}
   body.touch .mini{height:40px}
-  body.touch .bars{display:none}
+  body.touch .bar{height:7px}body.touch .bar b{display:none}
+}
+/* short windows: a compact stack */
+@media (max-height:540px){
+  #tsb{gap:4px}
+  .slot{height:54px}.slot .n{font-size:8.5px}.slot .t{font-size:16px;padding-bottom:12px}
+  .mini{height:38px}
 }
 /* portrait phones: the stack spans the width */
 @media (max-width:480px){
@@ -2945,7 +2951,8 @@ function applyVisual(f, fdt) {
   f.visual.scale.set(f.V.sxz, f.V.sy, f.V.sxz);
   f.shield.visible = f.blocking;
   if (f.shieldFlash > 0) { f.shieldFlash -= fdt; f.shield.scale.setScalar(1 + f.shieldFlash * 2); } else f.shield.scale.setScalar(1);
-  f.shield.material.color.set(f.blockBreak > 0 ? '#ff6a5a' : f.guard < 35 ? '#ffb15a' : '#8cc4ff');
+  const sc = f.blockBreak > 0 ? 0xff6a5a : f.guard < 35 ? 0xffb15a : 0x8cc4ff;   // only touch the colour when it changes
+  if (f.shieldCol !== sc) { f.shieldCol = sc; f.shield.material.color.setHex(sc); }
   f.stars.visible = f.stun > 0.3 && f.ragdoll <= 0 && !f.held && !f.dead && f.flatten <= 0 && !f.action;
   if (f.stars.visible) f.stars.rotation.y += fdt * 6;
   f.ice.visible = f.frozen > 0;
@@ -4217,6 +4224,6 @@ enableTouch(coarsePointer.matches); syncHudVars();
 toggleHelp(innerWidth >= 980 && innerHeight >= 700 && !TOUCH.on);
 requestAnimationFrame(frame);
 // ?dev=1 exposes internals for automated testing in the browser console
-if (/[?&]dev=1/.test(location.search)) window.__scbg = { fighters, get player() { return player; }, get gameTime() { return gameTime; }, CHARS, hit, press, held, BUF, SETTINGS, BIND, KOTH, NET, addBot, removeBot, useAbility, doM1, cycleLock, lock, toggleFpv, get fpv() { return fpv; }, renderer, M1, GUARD, PARRY, COMBO };
+if (/[?&]dev=1/.test(location.search)) window.__scbg = { fighters, get player() { return player; }, get gameTime() { return gameTime; }, CHARS, hit, press, held, BUF, SETTINGS, BIND, KOTH, NET, addBot, removeBot, useAbility, doM1, cycleLock, lock, toggleFpv, get fpv() { return fpv; }, renderer, M1, GUARD, PARRY, COMBO, scene, camera, updateTags, updateHUD, animateFighter, updateParts, updateRings, updateTemps, updateDebris, updateAuras, updateLock, updateCamera, updateNums, updateEventChip, drawProjs, simStep };
 })();
 </script>
