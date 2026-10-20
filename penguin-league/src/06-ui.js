@@ -379,7 +379,7 @@ const UI = (() => {
   function togglePause() {
     if (!inMatch() || M.state === 'over') return;
     M.paused = !M.paused;
-    KEYS.clear(); mouse.l = mouse.r = false;
+    KEYS.clear(); TAPS.clear(); mouse.l = mouse.r = mouse.lTap = mouse.rTap = false;
     if (M.paused) show('pause'); else { show(null); canvas.focus(); }
   }
   function results() {
