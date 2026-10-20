@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Local Game Server for Spear-Mace PVP and Penguin Life
-Serves both games locally (same origin, so they share one account) and opens it in your default web browser.
+Local Game Server for Spear-Mace PVP, Penguin Life and Penguintrack
+Serves all the games locally (same origin, so they share one account) and opens it in your default web browser.
 """
 
 import http.server
@@ -36,10 +36,11 @@ def run():
 
     url = f"http://localhost:{port}/"
     print("=" * 55)
-    print("⚔️🐧 SPEAR-MACE PVP + PENGUIN LIFE - Server Running!")
+    print("⚔️🐧 SPEAR-MACE PVP + PENGUIN LIFE + PENGUINTRACK - Server Running!")
     print(f"👉 Local URL: {url}")
     print(f"   Mace PVP:     {url}mace-pvp/")
     print(f"   Penguin Life: {url}penguin-life/")
+    print(f"   Penguintrack: {url}penguintrack/")
     print("🛑 Press Ctrl+C to stop the server.")
     print("=" * 55)
 

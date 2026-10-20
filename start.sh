@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# Spear-Mace PVP + Penguin Life - Quick Start Script
+# Spear-Mace PVP + Penguin Life + Penguintrack - Quick Start Script
 
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 cd "$DIR"
 
-echo "Starting Spear-Mace PVP + Penguin Life..."
+echo "Starting Spear-Mace PVP + Penguin Life + Penguintrack..."
 
 if command -v python3 &> /dev/null; then
     python3 server.py
