@@ -16,6 +16,10 @@ import { ArrowManager } from './weapons.js';
 import { arena } from './arena.js';
 import { online } from './online.js';
 
+// A fighter or arrow that moved further than this in one physics step teleported
+// (respawn, Void Walker): draw it at its new spot instead of sliding across the arena.
+const INTERP_SNAP_PX = 120;
+
 export class Game {
     constructor(canvas, uiCallbacks = {}) {
         this.canvas = canvas;
@@ -27,6 +31,12 @@ export class Game {
         this.particles = new ParticleManager();
         this.combat = new CombatEngine(this.particles);
         this.arrowManager = new ArrowManager();
+
+        // Render interpolation: physics runs at a fixed rate, the screen at its own,
+        // so each frame draws fighters and arrows part of the way between their last two steps.
+        this.fixedDt = 1000 / (60 * GAME_SPEED);
+        this.renderAlpha = 1;
+        this.netSnapAt = 0;      // online guest: when the last host snapshot arrived
 
         // Fighters
         this.player = new Fighter(false, "p1", this.playerName);
@@ -340,6 +350,19 @@ export class Game {
     handleNetMessage(msg, fromPeer = null) {
         const isHost = this.mode === "online" && this.onlineRole === "host";
         if (msg.t === "snap" && this.isOnlineGuest() && this.state === "play") {
+            // Glide from where each fighter is drawn right now to the new snapshot over one step,
+            // so uneven network timing never makes fighters jump.
+            const a = this.guestAlpha();
+            for (const f of this.allFighters) {
+                if (f.prevX === undefined) {
+                    f.prevX = f.x;
+                    f.prevY = f.y;
+                } else {
+                    f.prevX += (f.x - f.prevX) * a;
+                    f.prevY += (f.y - f.prevY) * a;
+                }
+            }
+            this.netSnapAt = performance.now();
             msg.f.forEach((d, i) => { if (this.allFighters[i]) this.unpackFighter(this.allFighters[i], d); });
             this.arrowManager.arrows = msg.a.map(([x, y, vx, vy, stuck, facing]) => ({
                 x, y, vx, vy, facing, stuck: !!stuck, gravity: 0, life: 60
@@ -937,7 +960,23 @@ export class Game {
         }
     }
 
+    /** Remembers where everything was before a physics step (the start of the interpolation). */
+    savePrevPositions() {
+        const fs = this.allFighters;
+        for (let i = 0; i < fs.length; i++) {
+            fs[i].prevX = fs[i].x;
+            fs[i].prevY = fs[i].y;
+        }
+        const as = this.arrowManager.arrows;
+        for (let i = 0; i < as.length; i++) {
+            as[i].prevX = as[i].x;
+            as[i].prevY = as[i].y;
+        }
+    }
+
     update() {
+        // The guest's positions come from host snapshots (handleNetMessage), not from steps.
+        if (!this.isOnlineGuest()) this.savePrevPositions();
         if (this.state !== "play") {
             this.particles.update();
             return;
@@ -1304,7 +1343,41 @@ export class Game {
         }
     }
 
+    guestAlpha() {
+        return Math.min(1, Math.max(0, (performance.now() - this.netSnapAt) / this.fixedDt));
+    }
+
+    /** Draws one frame with fighters and arrows interpolated between their last two physics steps. */
     render() {
+        const a = this.isOnlineGuest() ? this.guestAlpha() : this.renderAlpha;
+        const fs = this.allFighters, as = this.arrowManager.arrows;
+        for (let i = 0; i < fs.length; i++) this.toDrawPosition(fs[i], a);
+        for (let i = 0; i < as.length; i++) this.toDrawPosition(as[i], a);
+        try {
+            this.renderScene();
+        } finally {
+            // Drawing never changes the simulation: put the real positions back.
+            for (let i = 0; i < fs.length; i++) this.toSimPosition(fs[i]);
+            for (let i = 0; i < as.length; i++) this.toSimPosition(as[i]);
+        }
+    }
+
+    toDrawPosition(o, a) {
+        o.simX = o.x;
+        o.simY = o.y;
+        if (o.prevX === undefined) return;
+        const dx = o.x - o.prevX, dy = o.y - o.prevY;
+        if (Math.abs(dx) > INTERP_SNAP_PX || Math.abs(dy) > INTERP_SNAP_PX) return;
+        o.x = o.prevX + dx * a;
+        o.y = o.prevY + dy * a;
+    }
+
+    toSimPosition(o) {
+        o.x = o.simX;
+        o.y = o.simY;
+    }
+
+    renderScene() {
         const ctx = this.renderer.ctx;
 
         ctx.save();
@@ -1429,7 +1502,7 @@ export class Game {
         let lastTime = performance.now();
         let accumulator = 0;
         // Physics steps per second: 60 at GAME_SPEED 1, fewer when the game is slowed down
-        const FIXED_DT = 1000 / (60 * GAME_SPEED);
+        const FIXED_DT = this.fixedDt;
 
         const step = (currentTime) => {
             let frameTime = currentTime - lastTime;
@@ -1448,6 +1521,7 @@ export class Game {
                 accumulator = 0;
                 console.error("Game update error:", err);
             }
+            this.renderAlpha = accumulator / FIXED_DT;
             try {
                 this.render();
             } catch (err) {
