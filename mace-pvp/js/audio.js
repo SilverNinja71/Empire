@@ -3,6 +3,15 @@
 // 100% synthesized - zero external sound files needed
 // ==========================================
 
+// Parry clang: inharmonic bell partials as [frequency ratio, level, decay seconds]
+const PARRY_PARTIALS = [
+    [1.0,  0.22, 0.55],
+    [1.51, 0.14, 0.42],
+    [2.23, 0.10, 0.30],
+    [2.87, 0.07, 0.22],
+    [4.10, 0.05, 0.14]
+];
+
 class SoundEngine {
     constructor() {
         this.ctx = null;
@@ -285,6 +294,112 @@ class SoundEngine {
 
         osc.start(now);
         osc.stop(now + 0.13);
+    }
+
+    // Parry / clash: a bright, high metallic clang (bell partials) with a sharp strike tick.
+    // pitch < 1 gives the slightly lower clash variant.
+    playParry(pitch = 1) {
+        this.ensureContext();
+        if (!this.ctx || this.muted) return;
+
+        const now = this.ctx.currentTime;
+        for (let i = 0; i < PARRY_PARTIALS.length; i++) {
+            const ratio = PARRY_PARTIALS[i][0];
+            const level = PARRY_PARTIALS[i][1];
+            const decay = PARRY_PARTIALS[i][2];
+            const osc = this.ctx.createOscillator();
+            const gain = this.ctx.createGain();
+            osc.type = i === 0 ? "triangle" : "sine";
+            osc.frequency.setValueAtTime(1760 * pitch * ratio, now);
+            gain.gain.setValueAtTime(0.0001, now);
+            gain.gain.exponentialRampToValueAtTime(level, now + 0.004);
+            gain.gain.exponentialRampToValueAtTime(0.001, now + decay);
+            osc.connect(gain);
+            gain.connect(this.masterGain);
+            osc.start(now);
+            osc.stop(now + decay + 0.02);
+        }
+
+        const noiseBuf = this.getNoiseBuffer();
+        if (noiseBuf) {
+            const noise = this.ctx.createBufferSource();
+            noise.buffer = noiseBuf;
+            const filter = this.ctx.createBiquadFilter();
+            filter.type = "highpass";
+            filter.frequency.setValueAtTime(3500, now);
+            const nGain = this.ctx.createGain();
+            nGain.gain.setValueAtTime(0.3, now);
+            nGain.gain.exponentialRampToValueAtTime(0.001, now + 0.04);
+            noise.connect(filter);
+            filter.connect(nGain);
+            nGain.connect(this.masterGain);
+            noise.start(now);
+            noise.stop(now + 0.05);
+        }
+    }
+
+    // Raising the parry guard: a quick, quiet "shing"
+    playParryReady() {
+        this.ensureContext();
+        if (!this.ctx || this.muted) return;
+
+        const now = this.ctx.currentTime;
+        const noiseBuf = this.getNoiseBuffer();
+        if (!noiseBuf) return;
+
+        const noise = this.ctx.createBufferSource();
+        noise.buffer = noiseBuf;
+        const filter = this.ctx.createBiquadFilter();
+        filter.type = "bandpass";
+        filter.frequency.setValueAtTime(2200, now);
+        filter.frequency.exponentialRampToValueAtTime(6500, now + 0.07);
+        filter.Q.value = 6;
+        const gain = this.ctx.createGain();
+        gain.gain.setValueAtTime(0.12, now);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.08);
+        noise.connect(filter);
+        filter.connect(gain);
+        gain.connect(this.masterGain);
+        noise.start(now);
+        noise.stop(now + 0.09);
+    }
+
+    // Wind Geyser launch: a rising gust
+    playGeyser() {
+        this.ensureContext();
+        if (!this.ctx || this.muted) return;
+
+        const now = this.ctx.currentTime;
+        const noiseBuf = this.getNoiseBuffer();
+        if (noiseBuf) {
+            const noise = this.ctx.createBufferSource();
+            noise.buffer = noiseBuf;
+            const filter = this.ctx.createBiquadFilter();
+            filter.type = "bandpass";
+            filter.frequency.setValueAtTime(350, now);
+            filter.frequency.exponentialRampToValueAtTime(1600, now + 0.32);
+            filter.Q.value = 1.6;
+            const nGain = this.ctx.createGain();
+            nGain.gain.setValueAtTime(0.3, now);
+            nGain.gain.exponentialRampToValueAtTime(0.001, now + 0.34);
+            noise.connect(filter);
+            filter.connect(nGain);
+            nGain.connect(this.masterGain);
+            noise.start(now);
+            noise.stop(now + 0.35);
+        }
+
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        osc.type = "sine";
+        osc.frequency.setValueAtTime(160, now);
+        osc.frequency.exponentialRampToValueAtTime(380, now + 0.25);
+        gain.gain.setValueAtTime(0.12, now);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.25);
+        osc.connect(gain);
+        gain.connect(this.masterGain);
+        osc.start(now);
+        osc.stop(now + 0.26);
     }
 
     // Invisibility flicker / shroud sound

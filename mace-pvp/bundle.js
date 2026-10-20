@@ -86,7 +86,36 @@
   const ARENA_CONFIG = {
       width: 800,
       height: 440,             // Taller view so the ground layers are visible
-      groundY: 390
+      groundY: 390,
+  
+      // Wind Geyser pads set into the main floor: stepping on one launches you straight up
+      // with your dash and double jumps refreshed
+      geysers: [
+          { x: 60,  w: 40 },
+          { x: 700, w: 40 }
+      ],
+      geyserLaunch: -11.5,     // upward launch speed
+      geyserCooldown: 12       // frames before the same fighter can be launched again
+  };
+  
+  // Freeze frames on heavy hits: any hit of minDamage or more holds the action still for
+  // min(maxFrames, floor(damage / perFrame)) physics frames while effects keep playing
+  const HITSTOP_CONFIG = {
+      minDamage: 30,
+      perFrame: 12,
+      maxFrames: 7
+  };
+  
+  // Parry (F or Left Shift; Player 2 in local PvP uses /) and head-on dash clashes.
+  // Times are physics frames.
+  const PARRY_CONFIG = {
+      window: 8,               // the guard is up for this many frames
+      cooldown: 45,            // frames before you can parry again
+      attackerStun: 20,        // a parried attacker is stunned this long
+      bounceX: 9,              // both fighters are knocked apart this hard...
+      bounceY: -6,             // ...and popped up a little
+      hitStop: 5,              // freeze frames on every parry and clash
+      safeFrames: 12           // the parrying fighter can't be hit again straight away
   };
   
   const CORE_PHYSICS = {
@@ -156,7 +185,9 @@
       invisible:          { practice: 0,   easy: 0,   normal: 0,   pro: 0,   god: 1 },
       invisEvery:         { practice: 900, easy: 900, normal: 900, pro: 900, god: 720 },
       invisLength:        { practice: 300, easy: 300, normal: 300, pro: 300, god: 420 },
-      regen:              { practice: 0,   easy: 0,   normal: 0,   pro: 0,   god: 0.05 }
+      regen:              { practice: 0,   easy: 0,   normal: 0,   pro: 0,   god: 0.05 },
+      parryChance:        { practice: 0,   easy: 0,   normal: 0,   pro: 35,  god: 60 },  // % to parry a dash aimed at the bot within 90px
+      weaponSwap:         { practice: 0,   easy: 0,   normal: 0,   pro: 1,   god: 1 }    // 1 = swap to the loadout weapon that suits the distance
   };
   
   const MODE_METADATA = {
@@ -635,6 +666,15 @@
   // 100% synthesized - zero external sound files needed
   // ==========================================
   
+  // Parry clang: inharmonic bell partials as [frequency ratio, level, decay seconds]
+  const PARRY_PARTIALS = [
+      [1.0,  0.22, 0.55],
+      [1.51, 0.14, 0.42],
+      [2.23, 0.10, 0.30],
+      [2.87, 0.07, 0.22],
+      [4.10, 0.05, 0.14]
+  ];
+  
   class SoundEngine {
       constructor() {
           this.ctx = null;
@@ -917,6 +957,112 @@
   
           osc.start(now);
           osc.stop(now + 0.13);
+      }
+  
+      // Parry / clash: a bright, high metallic clang (bell partials) with a sharp strike tick.
+      // pitch < 1 gives the slightly lower clash variant.
+      playParry(pitch = 1) {
+          this.ensureContext();
+          if (!this.ctx || this.muted) return;
+  
+          const now = this.ctx.currentTime;
+          for (let i = 0; i < PARRY_PARTIALS.length; i++) {
+              const ratio = PARRY_PARTIALS[i][0];
+              const level = PARRY_PARTIALS[i][1];
+              const decay = PARRY_PARTIALS[i][2];
+              const osc = this.ctx.createOscillator();
+              const gain = this.ctx.createGain();
+              osc.type = i === 0 ? "triangle" : "sine";
+              osc.frequency.setValueAtTime(1760 * pitch * ratio, now);
+              gain.gain.setValueAtTime(0.0001, now);
+              gain.gain.exponentialRampToValueAtTime(level, now + 0.004);
+              gain.gain.exponentialRampToValueAtTime(0.001, now + decay);
+              osc.connect(gain);
+              gain.connect(this.masterGain);
+              osc.start(now);
+              osc.stop(now + decay + 0.02);
+          }
+  
+          const noiseBuf = this.getNoiseBuffer();
+          if (noiseBuf) {
+              const noise = this.ctx.createBufferSource();
+              noise.buffer = noiseBuf;
+              const filter = this.ctx.createBiquadFilter();
+              filter.type = "highpass";
+              filter.frequency.setValueAtTime(3500, now);
+              const nGain = this.ctx.createGain();
+              nGain.gain.setValueAtTime(0.3, now);
+              nGain.gain.exponentialRampToValueAtTime(0.001, now + 0.04);
+              noise.connect(filter);
+              filter.connect(nGain);
+              nGain.connect(this.masterGain);
+              noise.start(now);
+              noise.stop(now + 0.05);
+          }
+      }
+  
+      // Raising the parry guard: a quick, quiet "shing"
+      playParryReady() {
+          this.ensureContext();
+          if (!this.ctx || this.muted) return;
+  
+          const now = this.ctx.currentTime;
+          const noiseBuf = this.getNoiseBuffer();
+          if (!noiseBuf) return;
+  
+          const noise = this.ctx.createBufferSource();
+          noise.buffer = noiseBuf;
+          const filter = this.ctx.createBiquadFilter();
+          filter.type = "bandpass";
+          filter.frequency.setValueAtTime(2200, now);
+          filter.frequency.exponentialRampToValueAtTime(6500, now + 0.07);
+          filter.Q.value = 6;
+          const gain = this.ctx.createGain();
+          gain.gain.setValueAtTime(0.12, now);
+          gain.gain.exponentialRampToValueAtTime(0.001, now + 0.08);
+          noise.connect(filter);
+          filter.connect(gain);
+          gain.connect(this.masterGain);
+          noise.start(now);
+          noise.stop(now + 0.09);
+      }
+  
+      // Wind Geyser launch: a rising gust
+      playGeyser() {
+          this.ensureContext();
+          if (!this.ctx || this.muted) return;
+  
+          const now = this.ctx.currentTime;
+          const noiseBuf = this.getNoiseBuffer();
+          if (noiseBuf) {
+              const noise = this.ctx.createBufferSource();
+              noise.buffer = noiseBuf;
+              const filter = this.ctx.createBiquadFilter();
+              filter.type = "bandpass";
+              filter.frequency.setValueAtTime(350, now);
+              filter.frequency.exponentialRampToValueAtTime(1600, now + 0.32);
+              filter.Q.value = 1.6;
+              const nGain = this.ctx.createGain();
+              nGain.gain.setValueAtTime(0.3, now);
+              nGain.gain.exponentialRampToValueAtTime(0.001, now + 0.34);
+              noise.connect(filter);
+              filter.connect(nGain);
+              nGain.connect(this.masterGain);
+              noise.start(now);
+              noise.stop(now + 0.35);
+          }
+  
+          const osc = this.ctx.createOscillator();
+          const gain = this.ctx.createGain();
+          osc.type = "sine";
+          osc.frequency.setValueAtTime(160, now);
+          osc.frequency.exponentialRampToValueAtTime(380, now + 0.25);
+          gain.gain.setValueAtTime(0.12, now);
+          gain.gain.exponentialRampToValueAtTime(0.001, now + 0.25);
+          osc.connect(gain);
+          gain.connect(this.masterGain);
+          osc.start(now);
+          osc.stop(now + 0.26);
       }
   
       // Invisibility flicker / shroud sound
@@ -1316,7 +1462,8 @@
           });
       }
   
-      update(platforms, fighters, onHitCallback = null) {
+      // onParryCallback(fighter, arrow) runs instead of a hit when the fighter's parry guard is up
+      update(platforms, fighters, onHitCallback = null, onParryCallback = null) {
           for (let i = this.arrows.length - 1; i >= 0; i--) {
               const a = this.arrows[i];
   
@@ -1360,14 +1507,24 @@
                       a.y >= f.y && a.y <= f.y + f.h &&
                       f.hitCooldown <= 0
                   ) {
+                      // Parried: the arrow is swatted away harmlessly
+                      if (f.parryWindow > 0 && onParryCallback) {
+                          onParryCallback(f, a);
+                          this.arrows.splice(i, 1);
+                          break;
+                      }
+  
                       // Hit fighter! (stats count only the HP actually removed)
                       const dealt = Math.min(a.damage, Math.max(0, f.hp));
                       f.hp -= a.damage;
                       f.stats.damageTaken += dealt;
                       f.hitCooldown = 20;
                       f.stun = 25;
-                      f.xVel = a.facing * 7 * (a.knockbackMult || 1.0);
-                      f.yVel = -5;
+                      // Directional knockback along the arrow's flight, stronger for harder-hitting arrows
+                      const kScale = Math.max(0.85, Math.min(1.45, 0.85 + a.damage / 200));
+                      const dir = a.vx > 0 ? 1 : (a.vx < 0 ? -1 : a.facing);
+                      f.xVel = dir * 7 * (a.knockbackMult || 1.0) * kScale;
+                      f.yVel = -5 + Math.max(-2, Math.min(2.5, a.vy * 0.25));
   
                       const shooter = fighters.find(fl => fl.id === a.ownerId);
                       if (shooter) f.lastHitBy = shooter;
@@ -2641,6 +2798,24 @@
           }
       }
   
+      // Upward gusts for Wind Geyser launches
+      addWind(x, y, count = 12) {
+          for (let i = 0; i < count; i++) {
+              this.particles.push({
+                  x: x + (Math.random() * 30 - 15),
+                  y: y - Math.random() * 6,
+                  vx: (Math.random() - 0.5) * 1.2,
+                  vy: -3.5 - Math.random() * 4,
+                  gravity: 0.06, // gusts slow down as they rise
+                  size: 2 + Math.random() * 3,
+                  alpha: 0.9,
+                  decay: 0.03 + Math.random() * 0.02,
+                  color: i % 3 === 0 ? "#ffffff" : "rgba(127, 240, 255, 0.9)",
+                  type: "wind"
+              });
+          }
+      }
+  
       addFloatingText(x, y, text, color = "#ffffff", isCrit = false, scale = 1.0) {
           this.floatingTexts.push({
               x: x + (Math.random() * 20 - 10),
@@ -2850,6 +3025,11 @@
           this.stun = 0;
           this.isBotGame = false;
   
+          // Parry guard (F / Left Shift) and Wind Geyser re-launch timer
+          this.parryWindow = 0;
+          this.parryCooldown = 0;
+          this.geyserCd = 0;
+  
           // Visual squash & stretch
           this.squashX = 1.0;
           this.squashY = 1.0;
@@ -2996,6 +3176,9 @@
           this.ghostHp = maxHp;
           this.hitCooldown = 0;
           this.stun = 0;
+          this.parryWindow = 0;
+          this.parryCooldown = 0;
+          this.geyserCd = 0;
   
           this.squashX = 1.0;
           this.squashY = 1.0;
@@ -3038,6 +3221,9 @@
           this.dashReady = true;
           this.dashCooldown = 0;
           this.stun = 0;
+          this.parryWindow = 0;
+          this.parryCooldown = 0;
+          this.geyserCd = 0;
           this.hitCooldown = 60; // 1 second invulnerability
           this.isDead = false;
           this.squashX = 1.0;
@@ -3190,6 +3376,20 @@
           return true;
       }
   
+      // Parry: raise a short guard that negates the next slam, dash or arrow and stuns the attacker
+      parry() {
+          if (this.hp <= 0 || this.freezeT > 0 || this.stun > 0 || this.parryCooldown > 0) return false;
+  
+          this.parryWindow = PARRY_CONFIG.window;
+          this.parryCooldown = PARRY_CONFIG.cooldown;
+  
+          this.squashX = 1.15;
+          this.squashY = 0.88;
+  
+          sound.playParryReady();
+          return true;
+      }
+  
       // Platform one-way collision check
       checkPlatformCollision(platforms, prevBottom) {
           this.onGround = false;
@@ -3288,6 +3488,9 @@
           }
   
           if (this.swapCooldown > 0) this.swapCooldown--;
+          if (this.parryWindow > 0) this.parryWindow--;
+          if (this.parryCooldown > 0) this.parryCooldown--;
+          if (this.geyserCd > 0) this.geyserCd--;
   
           this.updateClassAndStatus();
   
@@ -3477,6 +3680,10 @@
           this.invisTimer = 0;
           this.sinceHit = 0;
           this.sizeTimer = 0;
+  
+          // Pro / God: parry rolls (one per incoming dash) and weapon-swap checks
+          this.parryRolled = false;
+          this.swapTimer = 0;
       }
   
       setParams(params) {
@@ -3496,12 +3703,44 @@
           this.invisTimer = 0;
           this.sinceHit = 0;
           this.sizeTimer = 0;
+          this.parryRolled = false;
+          this.swapTimer = 0;
+      }
+  
+      // How well a weapon suits the current spacing (higher is better)
+      weaponFit(weaponId, absDist, dy, above) {
+          switch (weaponId) {
+              case "mace":  return above && absDist < 160 ? 3.2 : (absDist < 110 ? 2.6 : 1);
+              case "spear": return absDist >= 110 && absDist < 300 ? 2.8 : (absDist < 110 ? 1.8 : 1.2);
+              case "sword": return absDist < 170 ? 2.7 : 1.3;
+              case "fists": return absDist < 60 ? 3 : 0.6;
+              case "bow":   return absDist > 240 && Math.abs(dy) < 60 ? 3.3 : (absDist > 180 ? 1.6 : 0.3);
+              default:      return 1;
+          }
+      }
+  
+      // Swap to the other loadout weapon when it clearly suits the distance better
+      considerSwap(targetPlayer, distance) {
+          const bot = this.bot;
+          if (!bot.loadout || bot.loadout.length < 2 || bot.dashing || bot.slamming) return;
+          const absDist = Math.abs(distance);
+          const dy = targetPlayer.y - bot.y;
+          const above = bot.y < targetPlayer.y - 40;
+          const current = bot.loadout[bot.activeSlot];
+          const other = bot.loadout[1 - bot.activeSlot];
+          if (this.weaponFit(other, absDist, dy, above) > this.weaponFit(current, absDist, dy, above) + 0.5) {
+              bot.swapWeapon();
+          }
       }
   
       // Helper: Bot dash initiating
       startDash(attack, distanceToTarget) {
           const bot = this.bot;
           if (!bot.dashReady || bot.dashing || bot.dashCooldown > 0) {
+              return false;
+          }
+          // Hold a raised parry guard instead of dashing out of it (a dash would turn the parry into a clash)
+          if (bot.parryWindow > 0) {
               return false;
           }
   
@@ -3583,6 +3822,30 @@
                   bot.facing = distance > 0 ? 1 : -1;
               }
   
+              // ---------- Parry a dash aimed at the bot (pro / god) ----------
+              if (!targetPlayer.dashing) {
+                  this.parryRolled = false;
+              } else if (
+                  P.parryChance > 0 &&
+                  !this.parryRolled &&
+                  targetPlayer.dashAttack &&
+                  Math.abs(distance) < 90 &&
+                  Math.abs(targetPlayer.y - bot.y) < 40 &&
+                  ((distance > 0 && targetPlayer.facing === -1) ||
+                   (distance < 0 && targetPlayer.facing === 1))
+              ) {
+                  this.parryRolled = true; // one roll per incoming dash
+                  if (bot.parryCooldown <= 0 && Math.random() * 100 < P.parryChance) {
+                      bot.parry();
+                  }
+              }
+  
+              // ---------- Swap weapons for the current distance (pro / god) ----------
+              if (P.weaponSwap > 0 && --this.swapTimer <= 0) {
+                  this.swapTimer = 24;
+                  this.considerSwap(targetPlayer, distance);
+              }
+  
               // ---------- Dodge incoming slam ----------
               const slamThreat = targetPlayer.slamming &&
                                  targetPlayer.y < bot.y &&
@@ -3637,8 +3900,20 @@
               }
   
               // ---------- Movement towards or away from player ----------
-              if ((this.dodging || this.runAway) && !bot.dashing) {
+              if (bot.parryWindow > 0 && !bot.dashing) {
+                  bot.xVel *= 0.5; // plant the feet while the parry guard is up
+              } else if ((this.dodging || this.runAway) && !bot.dashing) {
                   bot.xVel = distance > 0 ? -P.runSpeed : P.runSpeed;
+              } else if (!bot.dashing && bot.weaponId === "bow" && P.weaponSwap > 0) {
+                  // Archer spacing: hold about 230-300px away so arrows have room to fly
+                  const absDist = Math.abs(distance);
+                  if (absDist < 230) {
+                      bot.xVel = distance > 0 ? -P.speed : P.speed;
+                  } else if (absDist > 300) {
+                      bot.xVel = distance > 0 ? P.speed : -P.speed;
+                  } else {
+                      bot.xVel *= 0.6;
+                  }
               } else if (!bot.dashing) {
                   if (Math.abs(distance) > 40) {
                       bot.xVel = distance > 0 ? P.speed : -P.speed;
@@ -3810,6 +4085,111 @@
       constructor(particleManager) {
           this.particles = particleManager;
           this.bolts = []; // Lightning class bolts being drawn: { x, y, life }
+          this.onClash = null; // (kind: "parry" | "clash", x, y) => void, set by Game for hit-stop and online FX
+      }
+  
+      // Knockback grows with damage: a 25-damage hit pushes about as hard as before, big slams much harder
+      knockScale(damage) {
+          return Math.max(0.85, Math.min(1.45, 0.85 + damage / 200));
+      }
+  
+      // Parry: if the defender's guard is up, the hit is negated and the attacker is stunned
+      tryParry(attacker, defender) {
+          if (!(defender.parryWindow > 0) || defender.hp <= 0) return false;
+          this.resolveParry(attacker, defender, true);
+          return true;
+      }
+  
+      // Two attack dashes meeting head-on
+      isHeadOnClash(attacker, defender) {
+          if (!defender.dashing || !defender.dashAttack || defender.hp <= 0) return false;
+          if (attacker.facing === defender.facing) return false;
+          const ac = attacker.x + attacker.w / 2;
+          const dc = defender.x + defender.w / 2;
+          return (ac <= dc && attacker.facing === 1) || (ac >= dc && attacker.facing === -1);
+      }
+  
+      cancelActions(f) {
+          f.dashing = false;
+          f.dashAttack = false;
+          f.dashTimer = 0;
+          f.slamming = false;
+      }
+  
+      // Shared by parries and clashes: no damage, both fighters knocked apart, metallic clang.
+      // On a parry the attacker is also stunned; on a clash both simply recover.
+      resolveParry(attacker, defender, isParry) {
+          const P = PARRY_CONFIG;
+          const ac = attacker.x + attacker.w / 2;
+          const dc = defender.x + defender.w / 2;
+          const away = ac < dc ? -1 : (ac > dc ? 1 : -defender.facing); // direction the attacker is pushed
+  
+          this.cancelActions(attacker);
+          this.cancelActions(defender);
+  
+          attacker.xVel = away * P.bounceX;
+          attacker.yVel = P.bounceY;
+          attacker.onGround = false;
+          defender.xVel = -away * P.bounceX;
+          defender.yVel = P.bounceY;
+          defender.onGround = false;
+  
+          defender.parryWindow = 0;
+          defender.dashReady = true; // ready to punish
+          defender.dashCooldown = 0;
+          defender.hitCooldown = Math.max(defender.hitCooldown, P.safeFrames);
+  
+          if (isParry) {
+              attacker.stun = Math.max(attacker.stun, P.attackerStun);
+          } else {
+              attacker.hitCooldown = Math.max(attacker.hitCooldown, P.safeFrames);
+              attacker.dashReady = true;
+              attacker.dashCooldown = 0;
+          }
+  
+          attacker.squashX = 1.3;
+          attacker.squashY = 0.75;
+          defender.squashX = 1.3;
+          defender.squashY = 0.75;
+  
+          const x = (ac + dc) / 2;
+          const y = (attacker.y + attacker.h / 2 + defender.y + defender.h / 2) / 2;
+          const kind = isParry ? "parry" : "clash";
+          this.playParryFX(kind, x, y);
+          if (this.onClash) this.onClash(kind, x, y);
+      }
+  
+      // Parried arrow: knocked away harmlessly, the defender recoils a little and the shooter is stunned
+      parryArrow(defender, arrow, shooter) {
+          const P = PARRY_CONFIG;
+          const dir = arrow.vx > 0 ? 1 : (arrow.vx < 0 ? -1 : arrow.facing);
+  
+          defender.parryWindow = 0;
+          defender.hitCooldown = Math.max(defender.hitCooldown, P.safeFrames);
+          defender.dashReady = true;
+          defender.dashCooldown = 0;
+          defender.xVel = dir * P.bounceX * 0.5;
+          defender.yVel = P.bounceY * 0.6;
+          defender.squashX = 1.25;
+          defender.squashY = 0.8;
+  
+          if (shooter && shooter.hp > 0) {
+              shooter.stun = Math.max(shooter.stun, P.attackerStun);
+          }
+  
+          this.playParryFX("parry", arrow.x, arrow.y);
+          if (this.onClash) this.onClash("parry", arrow.x, arrow.y);
+      }
+  
+      // Visuals + sound for a parry or clash (also replayed on online guests)
+      playParryFX(kind, x, y) {
+          const isParry = kind === "parry";
+          sound.playParry(isParry ? 1 : 0.8);
+          this.particles.addShockwave(x, y, isParry ? 80 : 65, "rgba(255, 255, 255, 0.95)", isParry ? 5 : 4);
+          this.particles.addShockwave(x, y, isParry ? 45 : 35, isParry ? "rgba(170, 235, 255, 0.9)" : "rgba(255, 236, 160, 0.9)", 3);
+          this.particles.addHitSparks(x, y, isParry ? 20 : 16, "#ffffff");
+          this.particles.addFloatingText(x, y - 22, isParry ? "PARRY!" : "CLASH!", isParry ? "#ffffff" : "#fff1a8", true, 1.5);
+          this.particles.triggerShake(isParry ? 7 : 6, 10);
       }
   
       // Lightning class: mace slams add 18-22 extra stun frames, and 5% of slams call down a bolt (+20 damage)
@@ -3897,6 +4277,8 @@
               ab.y < defender.y + defender.h &&
               ab.y + ab.h > defender.y
           ) {
+              if (this.tryParry(attacker, defender)) return true;
+  
               const heightDifference = defender.y - ab.y;
               let slamDamage = CORE_PHYSICS.slamMinDamage + heightDifference * slamScale;
               slamDamage = Math.max(CORE_PHYSICS.slamMinDamage, Math.min(slamMaxDmg, slamDamage));
@@ -3917,8 +4299,14 @@
               defender.dashing = false;
               defender.dashAttack = false;
   
-              defender.xVel = (attacker.x < defender.x) ? 7 : -7;
-              defender.yVel = -7;
+              // Directional knockback: off-centre slams push sideways, square hits pop the
+              // defender straight up; both grow with damage
+              const kScale = this.knockScale(finalDamage);
+              const offset = (defender.x + defender.w / 2) - (ab.x + ab.w / 2);
+              const side = offset !== 0 ? Math.sign(offset) : (attacker.xVel >= 0 ? 1 : -1);
+              const lateral = Math.min(1, Math.abs(offset) / 20);
+              defender.xVel = side * (4 + 3 * lateral) * kScale;
+              defender.yVel = -(6 + 1.5 * (1 - lateral)) * kScale;
   
               // Attacker bounces up into the air
               this.maceLaunch(attacker);
@@ -3981,6 +4369,8 @@
               defender.hp > 0 &&
               defender.hitCooldown <= 0
           ) {
+              if (this.tryParry(attacker, defender)) return true;
+  
               const finalDamage = CORE_PHYSICS.slamGroundDamage * damageMultiplier;
               const dealt = this.applyDamage(attacker, defender, finalDamage);
               defender.hitCooldown = 20;
@@ -3989,6 +4379,12 @@
               defender.slamming = false;
               defender.dashing = false;
               defender.dashAttack = false;
+  
+              // The shockwave throws the defender away from the impact point
+              const kScale = this.knockScale(finalDamage);
+              defender.xVel = (defenderCenter >= attackerCenter ? 1 : -1) * 5 * kScale;
+              defender.yVel = -4.5 * kScale;
+              defender.onGround = false;
   
               attacker.stats.damageDealt += dealt;
               // One slam that hits several enemies still counts as one landed slam
@@ -4032,6 +4428,13 @@
               ab.y < defender.y + defender.h &&
               ab.y + ab.h > defender.y
           ) {
+              // Head-on dashes clash; a raised guard parries
+              if (this.isHeadOnClash(attacker, defender)) {
+                  this.resolveParry(attacker, defender, false);
+                  return true;
+              }
+              if (this.tryParry(attacker, defender)) return true;
+  
               const finalDamage = baseDmg * damageMultiplier;
               const dealt = this.applyDamage(attacker, defender, finalDamage);
               defender.hitCooldown = 22;
@@ -4041,8 +4444,12 @@
               defender.dashing = false;
               defender.dashAttack = false;
   
-              defender.xVel = attacker.facing * 7 * knockMult;
-              defender.yVel = -7;
+              // Directional knockback along the dash, stronger for heavier hits;
+              // hits from below launch higher, hits from above stay flatter
+              const kScale = this.knockScale(finalDamage);
+              const rise = Math.max(-1, Math.min(1, ((attacker.y + attacker.h / 2) - (defender.y + defender.h / 2)) / 25));
+              defender.xVel = attacker.facing * 7 * knockMult * kScale;
+              defender.yVel = -(6.5 + 1.5 * rise) * Math.min(1.25, kScale);
   
               attacker.dashing = false;
               attacker.dashAttack = false;
@@ -4091,6 +4498,9 @@
   // and multi-fighter 1v1, 2v2, 5v5 team arena matches
   // ==========================================
   
+  
+  // Wind charge swirl over a geyser grate: 8 pixel offsets around a circle, stepped for a blocky spin
+  const GEYSER_SWIRL = [[6, 0], [4, -4], [0, -6], [-4, -4], [-6, 0], [-4, 4], [0, 6], [4, 4]];
   
   class Renderer {
       constructor(canvas) {
@@ -4739,6 +5149,145 @@
                   }
               }
           }
+      }
+  
+      // Wind Geyser pads on the main floor: a vent grate with wind gusting up out of it.
+      // Everything is procedural from the frame counter (no per-frame allocations).
+      drawGeysers() {
+          const pads = ARENA_CONFIG.geysers;
+          if (!pads || !pads.length) return;
+          const ctx = this.ctx;
+          const floor = ARENA_CONFIG.groundY;
+          const t = this.frameCount;
+          if (!this.geyserGradients) this.geyserGradients = [];
+  
+          ctx.save();
+          for (let i = 0; i < pads.length; i++) {
+              const g = pads[i];
+              const cx = g.x + g.w / 2;
+  
+              // Soft rising air column (gradient built once per pad)
+              let grad = this.geyserGradients[i];
+              if (!grad) {
+                  grad = ctx.createLinearGradient(0, floor - 170, 0, floor);
+                  grad.addColorStop(0, "rgba(160, 235, 255, 0)");
+                  grad.addColorStop(1, "rgba(160, 235, 255, 0.3)");
+                  this.geyserGradients[i] = grad;
+              }
+              const colW = Math.round(g.w * (0.8 + 0.2 * Math.sin(t * 0.12 + i * 1.7)));
+              ctx.globalAlpha = 1;
+              ctx.fillStyle = grad;
+              ctx.fillRect(Math.round(cx - colW / 2), floor - 170, colW, 170);
+  
+              // Gusts: short streaks that rise and fade
+              for (let k = 0; k < 10; k++) {
+                  const rise = (t * 2.4 + k * 41 + i * 17) % 160;
+                  const sx = g.x + 4 + ((k * 13 + i * 7) % (g.w - 8)) + Math.round(Math.sin((t + k * 20) * 0.08) * 3);
+                  ctx.globalAlpha = 0.85 * (1 - rise / 160);
+                  ctx.fillStyle = k % 3 === 0 ? "#ffffff" : "#7ff0ff";
+                  ctx.fillRect(Math.round(sx), Math.round(floor - 8 - rise), 2, 7);
+              }
+  
+              // Vent grate set into the floor, with glowing slots
+              ctx.globalAlpha = 1;
+              ctx.fillStyle = "#1f2731";
+              ctx.fillRect(g.x - 3, floor - 4, g.w + 6, 9);
+              ctx.fillStyle = "#5c6b7d";
+              ctx.fillRect(g.x - 3, floor - 4, g.w + 6, 2);
+              ctx.fillStyle = "#3a4654";
+              ctx.fillRect(g.x - 3, floor + 3, g.w + 6, 2);
+              ctx.globalAlpha = 0.55 + 0.45 * Math.sin(t * 0.2 + i * 2);
+              ctx.fillStyle = "#7ff0ff";
+              for (let s = 0; s < 4; s++) ctx.fillRect(g.x + 2 + s * 10, floor - 1, 6, 3);
+  
+              // Little wind charge swirl hovering over the grate
+              ctx.globalAlpha = 0.9;
+              ctx.fillStyle = "#e8fbff";
+              const step = Math.floor(t / 5);
+              for (let k = 0; k < 3; k++) {
+                  const o = GEYSER_SWIRL[(step + k * 3) % GEYSER_SWIRL.length];
+                  ctx.fillRect(cx + o[0] - 1, floor - 16 + o[1] - 1, 3, 3);
+              }
+          }
+          ctx.restore();
+      }
+  
+      // Parry guard: bright white corner brackets that snap outward while the guard is up
+      drawParryGuard(f) {
+          if (f.hp <= 0 || !(f.parryWindow > 0)) return;
+          const ctx = this.ctx;
+          const k = 1 - f.parryWindow / PARRY_CONFIG.window; // 0 when raised -> 1 as it ends
+          const pad = 4 + Math.round(k * 6);
+          const x = Math.round(f.x - pad);
+          const y = Math.round(f.y - pad);
+          const w = Math.round(f.w + pad * 2);
+          const h = Math.round(f.h + pad * 2);
+          const arm = 7;
+  
+          ctx.save();
+          ctx.globalAlpha = 0.95 - k * 0.45;
+          ctx.fillStyle = "#ffffff";
+          ctx.fillRect(x, y, arm, 3);
+          ctx.fillRect(x, y, 3, arm);
+          ctx.fillRect(x + w - arm, y, arm, 3);
+          ctx.fillRect(x + w - 3, y, 3, arm);
+          ctx.fillRect(x, y + h - 3, arm, 3);
+          ctx.fillRect(x, y + h - arm, 3, arm);
+          ctx.fillRect(x + w - arm, y + h - 3, arm, 3);
+          ctx.fillRect(x + w - 3, y + h - arm, 3, arm);
+          ctx.globalAlpha = 0.18 * (1 - k);
+          ctx.fillStyle = "#bff4ff";
+          ctx.fillRect(x + 3, y + 3, w - 6, h - 6);
+          ctx.restore();
+      }
+  
+      // Parry readiness beside the weapon hotbar: a small shield that greys out while it recharges
+      drawParryMeter(f) {
+          if (!f || f.hp <= 0) return;
+          const ctx = this.ctx;
+          ctx.save();
+          ctx.font = "16px VT323, monospace";
+          // Sit just right of the hotbar's "Q: swap" label (measured once; drawLoadoutHotbar draws it at x = 86)
+          if (!this.swapLabelW) this.swapLabelW = ctx.measureText("Q: swap").width;
+          const hasHotbar = f.loadout && f.loadout.length >= 2;
+          const x = hasHotbar ? Math.round(86 + this.swapLabelW + 14) : 14;
+          const cy = this.height - 29; // vertical centre of the hotbar row
+          const cooling = f.parryCooldown > 0;
+          const guard = f.parryWindow > 0;
+          const body = guard ? "#ffffff" : (cooling ? "#6b7380" : "#d9f6ff");
+          const trim = guard ? "#7ff0ff" : (cooling ? "#4a515c" : "#3fb6d9");
+  
+          // Pixel shield (12 x 14) with a black outline
+          ctx.fillStyle = "#000000";
+          ctx.fillRect(x - 1, cy - 8, 14, 11);
+          ctx.fillRect(x, cy + 3, 12, 3);
+          ctx.fillRect(x + 2, cy + 6, 8, 2);
+          ctx.fillRect(x + 4, cy + 8, 4, 2);
+          ctx.fillStyle = body;
+          ctx.fillRect(x, cy - 7, 12, 10);
+          ctx.fillRect(x + 1, cy + 3, 10, 2);
+          ctx.fillRect(x + 3, cy + 5, 6, 2);
+          ctx.fillRect(x + 5, cy + 7, 2, 2);
+          ctx.fillStyle = trim;
+          ctx.fillRect(x + 5, cy - 6, 2, 11);
+          ctx.fillRect(x + 1, cy - 3, 10, 2);
+  
+          // Label and recharge bar
+          ctx.textAlign = "left";
+          ctx.textBaseline = "middle";
+          ctx.strokeStyle = "#000000";
+          ctx.lineWidth = 3;
+          ctx.strokeText("F: parry", x + 18, cy - 2);
+          ctx.fillStyle = cooling ? "#9aa1ab" : "#ffffff";
+          ctx.fillText("F: parry", x + 18, cy - 2);
+          if (cooling) {
+              const frac = 1 - f.parryCooldown / PARRY_CONFIG.cooldown;
+              ctx.fillStyle = "rgba(0, 0, 0, 0.6)";
+              ctx.fillRect(x + 18, cy + 7, 44, 4);
+              ctx.fillStyle = "#7ff0ff";
+              ctx.fillRect(x + 18, cy + 7, Math.round(44 * frac), 4);
+          }
+          ctx.restore();
       }
   
       // ==========================================
@@ -5644,8 +6193,8 @@
           ctx.save();
           ctx.globalAlpha = alpha;
   
-          // On the ground strip at the bottom, right of the weapon hotbar, so it never covers the HUD
-          const bannerX = 170;
+          // On the ground strip at the bottom, right of the weapon hotbar and parry meter, so it never covers the HUD
+          const bannerX = 240;
           const bannerW = this.width - bannerX - 14;
           const bannerH = 18;
           const bannerY = this.height - 34;
@@ -5661,10 +6210,11 @@
           ctx.textAlign = "center";
           ctx.textBaseline = "middle";
   
+          const textX = bannerX + bannerW / 2;
           if (isPvP) {
-              ctx.fillText("P1: WASD = MOVE/JUMP | SPACE = DASH/ATTACK | S = SLAM   ••   P2: ARROWS | ENTER = ATTACK | DOWN = SLAM", this.width / 2, bannerY + bannerH / 2);
+              ctx.fillText("P1: WASD • SPACE HIT • S SLAM • F PARRY   ••   P2: ARROWS • ENTER HIT • DOWN SLAM • / PARRY", textX, bannerY + bannerH / 2);
           } else {
-              ctx.fillText("WASD / ARROWS = MOVE • SPACE / CLICK = ATTACK • S / DOWN = SLAM • Q = SWAP WEAPON • ESC = PAUSE", this.width / 2, bannerY + bannerH / 2);
+              ctx.fillText("WASD MOVE • SPACE/CLICK ATTACK • S SLAM • F/SHIFT PARRY • Q SWAP • ESC PAUSE", textX, bannerY + bannerH / 2);
           }
   
           ctx.restore();
@@ -5738,6 +6288,18 @@
   
           this.flash = 0; // white screen flash strength (heavy hits / KOs)
   
+          // Freeze frames left after a heavy hit, parry or clash (physics and combat pause, effects keep playing)
+          this.hitStop = 0;
+  
+          // Parries and clashes from the combat engine (hit-stop + online FX)
+          this.combat.onClash = (kind, x, y) => this.onParryEvent(kind, x, y);
+  
+          // Created once so the per-frame arrow update allocates nothing for parries
+          this.onArrowParry = (defender, arrow) => {
+              const shooter = this.allFighters.find(f => f.id === arrow.ownerId) || null;
+              this.combat.parryArrow(defender, arrow, shooter);
+          };
+  
           // Mouse position in arena coordinates (for aiming the bow)
           this.mouse = { x: 0, y: 0, active: false };
   
@@ -5780,6 +6342,7 @@
           this.respawnQueue = [];
           this.highestJumper = null;
           this.winnerTeam = null;
+          this.hitStop = 0;
   
           const maxHp = (mode === "practice") ? 1000 : (this.botParams.maxHP || 100);
           const user = auth.getUser();
@@ -5797,7 +6360,10 @@
           const botMeta = MODE_METADATA[mode] || { name: "Bot" };
           this.bot.reset(650, -1, maxHp);
           this.bot.name = (mode === "pvp") ? "Player 2" : `[BOT] ${botMeta.name}`;
-          this.bot.setLoadout(mode === "god" ? "mace" : (mode === "pro" ? "sword" : "spear"));
+          // Pro and God bots carry a second weapon and swap to whichever suits the distance
+          if (mode === "god") this.bot.setLoadout("mace", "bow");
+          else if (mode === "pro") this.bot.setLoadout("sword", "spear");
+          else this.bot.setLoadout("spear");
           this.bot.setSkin(mode === "god" ? "enderman" : (mode === "pro" ? "diamond_knight" : "alex"));
           this.bot.setClass((mode === "pvp" || mode === "practice") ? "normal" : randomClassId());
           this.bot.setTeam("red"); // OPPONENT IS ALWAYS RED
@@ -6015,6 +6581,9 @@
               if (msg.a === "slam") f.slam();
               if (msg.a === "swap") f.swapWeapon();
               if (msg.a === "size") f.toggleSize();
+              if (msg.a === "parry") f.parry();
+          } else if (msg.t === "fx" && this.isOnlineGuest() && this.state === "play") {
+              this.playNetFx(msg);
           } else if (msg.t === "end" && this.isOnlineGuest() && this.state === "play") {
               msg.stats.forEach((st, i) => { this.allFighters[i].stats = st; });
               this.finishMatch(msg.w === this.localFighter.team);
@@ -6109,6 +6678,7 @@
           this.respawnQueue = [];
           this.highestJumper = null;
           this.winnerTeam = null;
+          this.hitStop = 0;
   
           this.state = "play";
   
@@ -6127,7 +6697,10 @@
           const maxHp = (this.mode === "practice") ? 1000 : (this.botParams.maxHP || 100);
           this.player.reset(150, 1, maxHp);
           this.bot.reset(650, -1, maxHp);
+          // Bots with two weapons start the rematch on their primary again
+          if (this.bot.loadout && this.bot.loadout.length > 1) this.bot.setLoadout(this.bot.loadout[0], this.bot.loadout[1]);
           this.botAI.reset();
+          this.hitStop = 0;
           this.bot._botAI = this.botAI;
           this.allFighters = [this.player, this.bot];
           this.arrowManager.reset();
@@ -6199,6 +6772,7 @@
           if (action === "slam") f.slam();
           if (action === "swap") f.swapWeapon();
           if (action === "size") f.toggleSize();
+          if (action === "parry") f.parry();
       }
   
       // Space / left-click attack for the local fighter (bow shots go toward the mouse)
@@ -6266,7 +6840,7 @@
               const t = e.target;
               if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
   
-              const gameKeys = ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Space", "KeyW", "KeyS", "KeyA", "KeyD"];
+              const gameKeys = ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Space", "KeyW", "KeyS", "KeyA", "KeyD", "KeyF", "Slash"];
               if (gameKeys.includes(e.code) && this.state !== "menu") {
                   e.preventDefault();
               }
@@ -6336,6 +6910,7 @@
                   if (e.code === "ArrowDown" || e.code === "KeyS") online.send({ t: "act", a: "slam" });
                   if (e.code === "KeyQ") online.send({ t: "act", a: "swap" });
                   if (e.code === "KeyB") online.send({ t: "act", a: "size" });
+                  if (e.code === "KeyF" || e.code === "ShiftLeft") online.send({ t: "act", a: "parry" });
                   return;
               }
   
@@ -6355,6 +6930,11 @@
               // --- Buddha class: grow big / shrink ---
               if (e.code === "KeyB") {
                   this.localFighter.toggleSize();
+              }
+  
+              // --- Parry: short guard that negates the next slam, dash or arrow ---
+              if (e.code === "KeyF" || e.code === "ShiftLeft") {
+                  this.localFighter.parry();
               }
   
               // --- Player 1 Weapon Attack / Dash / Bow Shoot ---
@@ -6377,6 +6957,9 @@
                   }
                   if (e.code === "ArrowDown") {
                       this.bot.slam();
+                  }
+                  if (e.code === "Slash") {
+                      this.bot.parry();
                   }
               }
           });
@@ -6511,6 +7094,64 @@
           return this.isDifficultyBot(defender) ? (this.botParams.stunMult ?? 1) : 1;
       }
   
+      // Freeze frames for heavy hits: min(7, floor(damage / 12)) frames for any hit of 30+
+      registerHit(dmg) {
+          if (dmg < HITSTOP_CONFIG.minDamage) return;
+          const frames = Math.min(HITSTOP_CONFIG.maxFrames, Math.floor(dmg / HITSTOP_CONFIG.perFrame));
+          if (frames > this.hitStop) this.hitStop = frames;
+      }
+  
+      // Parries and clashes freeze the action briefly and are mirrored to online guests
+      onParryEvent(kind, x, y) {
+          if (PARRY_CONFIG.hitStop > this.hitStop) this.hitStop = PARRY_CONFIG.hitStop;
+          this.flash = Math.max(this.flash, kind === "parry" ? 0.25 : 0.15);
+          if (this.mode === "online" && this.onlineRole === "host") {
+              online.send({ t: "fx", k: kind, x: Math.round(x), y: Math.round(y) });
+          }
+      }
+  
+      // Online guest: replay effects for events the host announces (snapshots carry no events)
+      playNetFx(msg) {
+          if (msg.k === "parry" || msg.k === "clash") {
+              this.combat.playParryFX(msg.k, msg.x, msg.y);
+              this.flash = Math.max(this.flash, msg.k === "parry" ? 0.25 : 0.15);
+          } else if (msg.k === "geyser") {
+              this.particles.addWind(msg.x, ARENA_CONFIG.groundY, 14);
+              sound.playGeyser();
+          }
+      }
+  
+      // Wind Geyser pads: anyone standing on one is launched straight up with dash and double jumps refreshed
+      applyGeyser(f) {
+          if (f.hp <= 0 || !f.onGround || f.geyserCd > 0) return;
+          if (Math.abs(f.y + f.h - ARENA_CONFIG.groundY) > 1) return; // main floor only
+          const cx = f.x + f.w / 2;
+          const pads = ARENA_CONFIG.geysers;
+          for (let i = 0; i < pads.length; i++) {
+              const g = pads[i];
+              if (cx < g.x || cx > g.x + g.w) continue;
+  
+              f.yVel = ARENA_CONFIG.geyserLaunch;
+              f.onGround = false;
+              f.coyoteTimer = 0;
+              f.slamming = false;
+              f.dashReady = true;
+              f.dashCooldown = 0;
+              f.jumpsLeft = 2;
+              f.geyserCd = ARENA_CONFIG.geyserCooldown;
+              f.squashX = 0.75;
+              f.squashY = 1.35;
+  
+              const gx = g.x + g.w / 2;
+              this.particles.addWind(gx, ARENA_CONFIG.groundY, 14);
+              sound.playGeyser();
+              if (this.mode === "online" && this.onlineRole === "host") {
+                  online.send({ t: "fx", k: "geyser", x: Math.round(gx) });
+              }
+              return;
+          }
+      }
+  
       update() {
           if (this.state !== "play") {
               this.particles.update();
@@ -6520,6 +7161,14 @@
           if (this.isOnlineGuest()) {
               // The host simulates; we only animate effects and send our input
               this.handleContinuousInput();
+              this.particles.update();
+              return;
+          }
+  
+          // Hit-stop: hold the match still for a few frames after a heavy hit, parry or clash,
+          // while sparks, shockwaves and screen shake keep moving
+          if (this.hitStop > 0) {
+              this.hitStop--;
               this.particles.update();
               return;
           }
@@ -6551,7 +7200,7 @@
                   ai.update(nearest);
   
                   // If bot has bow and is in line with target, shoot arrow
-                  if (fighter.weaponId === "bow" && fighter.arrowCooldown <= 0 && Math.abs(nearest.y - fighter.y) < 50) {
+                  if (fighter.weaponId === "bow" && fighter.arrowCooldown <= 0 && fighter.parryWindow <= 0 && Math.abs(nearest.y - fighter.y) < 50) {
                       fighter.dash(null, true, null, this.arrowManager);
                   }
               }
@@ -6580,6 +7229,7 @@
                       this.combat.checkGroundSlam(f, def, this.hitDamageMult(f, def), this.hitStunMult(def), (dmg, atk, defender) => {
                           if (defender._botAI) defender._botAI.onHit();
                           if (dmg >= 50) this.flash = Math.max(this.flash, 0.3);
+                          this.registerHit(dmg);
                           if (this.isTiebreaker) {
                               if (atk.team === "red" || (!atk.team && atk === this.player)) {
                                   this.tiebreakerRedDamage += dmg;
@@ -6590,6 +7240,9 @@
                       });
                   }
               }
+  
+              // Wind Geyser pads launch anyone standing on them
+              this.applyGeyser(f);
           }
   
           // Decisive push-separation between overlapping fighters so models never fuse together
@@ -6626,6 +7279,7 @@
               this.particles.addHitSparks(arrow.x, arrow.y, 10, "#e74c3c");
               this.particles.addDamageText(hitFighter.x + hitFighter.w / 2, hitFighter.y, arrowDmg, false);
               this.particles.triggerShake(4, 6);
+              this.registerHit(arrowDmg);
   
               if (hitFighter._botAI) hitFighter._botAI.onHit();
               const arrowShooter = this.allFighters.find(f => f.id === arrow.ownerId);
@@ -6641,7 +7295,7 @@
                       }
                   }
               }
-          });
+          }, this.onArrowParry);
   
           // Resolve mid-air slams and dash collisions between opposing teams (zero temporary array allocation)
           for (let i = 0; i < this.redTeam.length; i++) {
@@ -6654,11 +7308,13 @@
                   this.combat.checkAirSlam(atk, def, this.hitDamageMult(atk, def), this.hitStunMult(def), (dmg) => {
                       if (def._botAI) def._botAI.onHit();
                       if (dmg >= 50) this.flash = Math.max(this.flash, 0.3);
+                      this.registerHit(dmg);
                       if (this.isTiebreaker) this.tiebreakerRedDamage += dmg;
                   });
                   this.combat.checkDashHit(atk, def, this.hitDamageMult(atk, def), this.hitStunMult(def), (dmg) => {
                       if (def._botAI) def._botAI.onHit();
                       if (dmg >= 50) this.flash = Math.max(this.flash, 0.3);
+                      this.registerHit(dmg);
                       if (this.isTiebreaker) this.tiebreakerRedDamage += dmg;
                   });
               }
@@ -6674,11 +7330,13 @@
                   this.combat.checkAirSlam(atk, def, this.hitDamageMult(atk, def), this.hitStunMult(def), (dmg) => {
                       if (def._botAI) def._botAI.onHit();
                       if (dmg >= 50) this.flash = Math.max(this.flash, 0.3);
+                      this.registerHit(dmg);
                       if (this.isTiebreaker) this.tiebreakerBlueDamage += dmg;
                   });
                   this.combat.checkDashHit(atk, def, this.hitDamageMult(atk, def), this.hitStunMult(def), (dmg) => {
                       if (def._botAI) def._botAI.onHit();
                       if (dmg >= 50) this.flash = Math.max(this.flash, 0.3);
+                      this.registerHit(dmg);
                       if (this.isTiebreaker) this.tiebreakerBlueDamage += dmg;
                   });
               }
@@ -6869,6 +7527,7 @@
   
           this.renderer.drawBackground();
           this.renderer.drawPlatforms();
+          this.renderer.drawGeysers();
   
           const botMeta = this.mode === "online"
               ? { ...(MODE_METADATA.pvp || MODE_METADATA.normal), name: "Online Duel" }
@@ -6892,6 +7551,7 @@
                   this.renderer.drawFighter(f, botColor, isMultiplayer);
               }
               this.renderer.drawStatusEffects(f);
+              if (f.parryWindow > 0) this.renderer.drawParryGuard(f);
               const indR = f.team === "red" ? 255 : (f.team === "blue" ? 30 : 46);
               const indG = f.team === "red" ? 71 : (f.team === "blue" ? 144 : 204);
               const indB = f.team === "red" ? 87 : (f.team === "blue" ? 255 : 113);
@@ -6943,6 +7603,8 @@
           if (this.state === "play") {
               this.renderer.drawLoadoutHotbar(this.localFighter);
               this.renderer.drawClassStatus(this.localFighter);
+              // The host owns parry timers in online play, so guests don't get a (stale) meter
+              if (!this.isOnlineGuest()) this.renderer.drawParryMeter(this.localFighter);
           }
   
           // Hit / KO flash, fading out
@@ -9258,6 +9920,7 @@
           bindButton("touch-jump", () => this.game.localAction("jump"), () => {});
           bindButton("touch-dash", () => this.game.localAttack(), () => {});
           bindButton("touch-slam", () => this.game.localAction("slam"), () => {});
+          bindButton("touch-parry", () => this.game.localAction("parry"), () => {});
           bindButton("touch-swap", () => this.game.localAction("swap"), () => {});
       }
   

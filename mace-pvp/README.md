@@ -43,14 +43,15 @@ You can launch or share the game immediately in multiple ways:
 | **Swap Weapon** | <kbd>Q</kbd> | Switch between your two loadout weapons (set Slot 1 / Slot 2 in the Inventory). |
 | **Aim Bow** | Mouse | With the bow, <kbd>Space</kbd> or left-click fires toward the cursor. |
 | **Mace Slam** | <kbd>S</kbd> or <kbd>↓</kbd> | Dive downwards at terminal velocity. Hits harder from greater heights! |
+| **Parry** | <kbd>F</kbd> or <kbd>Left Shift</kbd> | Raise an 8-frame guard (45-frame cooldown). A slam, dash or arrow that hits the guard does no damage, knocks you both apart and stuns the attacker. |
 | **Pause** | <kbd>Esc</kbd> | Open pause menu |
 | **Toggle Mute** | <kbd>M</kbd> | Toggle synthesized Web Audio sound effects |
 | **Restart Match** | <kbd>R</kbd> | Quick restart current match |
 | **Home Screen** | <kbd>H</kbd> | Return to mode selection menu |
 
 ### Local 2-Player Mode (Duel on 1 Keyboard)
-- **Player 1**: <kbd>W</kbd> <kbd>A</kbd> <kbd>S</kbd> <kbd>D</kbd> to move/jump/slam + <kbd>Space</kbd> to Spear Dash
-- **Player 2**: <kbd>↑</kbd> <kbd>←</kbd> <kbd>↓</kbd> <kbd>→</kbd> to move/jump/slam + <kbd>Enter</kbd> (or <kbd>Shift</kbd>) to Spear Dash
+- **Player 1**: <kbd>W</kbd> <kbd>A</kbd> <kbd>S</kbd> <kbd>D</kbd> to move/jump/slam + <kbd>Space</kbd> to Spear Dash + <kbd>F</kbd> (or <kbd>Left Shift</kbd>) to Parry
+- **Player 2**: <kbd>↑</kbd> <kbd>←</kbd> <kbd>↓</kbd> <kbd>→</kbd> to move/jump/slam + <kbd>Enter</kbd> (or <kbd>Right Shift</kbd>) to Spear Dash + <kbd>/</kbd> to Parry
 
 ---
 
@@ -68,7 +69,20 @@ You can launch or share the game immediately in multiple ways:
 - Works both on the ground and mid-air.
 - You can even dash **mid-slam** to adjust your horizontal alignment!
 
-### 3. Off-Screen Orbit Indicators
+### 3. Hit-Stop & Directional Knockback
+- Any hit of **30+ damage** freezes the action for `min(7, floor(damage / 12))` frames while sparks and screen shake keep playing, so big hits land with weight.
+- Knockback follows the hit: off-centre slams push sideways, square slams pop the target up, dashes and arrows push along their path, and every push grows with the damage dealt.
+
+### 4. Parry & Clash
+- Press <kbd>F</kbd> (or <kbd>Left Shift</kbd>) to raise an **8-frame guard** (45-frame cooldown, shown by the shield next to your hotbar).
+- A slam, dash or arrow that hits the guard is a **PARRY**: no damage, both fighters bounce apart, and the attacker is stunned for 20 frames. Parried arrows are swatted away and stun the archer.
+- Two attack dashes meeting head-on **CLASH**: nobody takes damage and both fighters bounce apart, ready to go again.
+- Pro and God bots can parry dashes thrown at them from close range.
+
+### 5. Wind Geysers
+- Two vents in the main floor (far left and far right) launch anyone who stands on them straight up, refreshing your dash and double jumps. Use them to climb for a high slam or to escape a corner.
+
+### 6. Off-Screen Orbit Indicators
 - Jumps and bounces can launch you high above the arena ceiling. An off-screen indicator triangle dynamically tracks your altitude in pixels.
 
 ---
@@ -80,8 +94,8 @@ You can launch or share the game immediately in multiple ways:
 | **Practice** | <kbd>T</kbd> | 1000 | 10x health sparring ring with a gentle bot to practice combos and air dashes. |
 | **Easy** | <kbd>E</kbd> | 100 | Relaxed bot reaction times. Good for mastering mace bounce chains. |
 | **Normal** | <kbd>N</kbd> | 100 | Standard competitive baseline. Bot predicts movement and dodges slams. |
-| **Pro** | <kbd>P</kbd> | 100 | Aggressive bot that double jumps to gain height for devastating slams, dodges incoming dashes, and punishes stun. |
-| **God** | <kbd>G</kbd> | 100 | **Mythic Boss Bot**: Shrouded in near-black armor, cycles into full invisibility every 15s, regenerates HP after 3s without hits, and has zero dash cooldown mid-air. |
+| **Pro** | <kbd>P</kbd> | 100 | Aggressive bot that double jumps to gain height for devastating slams, dodges incoming dashes, and punishes stun. Carries a sword and a spear and swaps to whichever suits the distance, and sometimes parries your dashes. |
+| **God** | <kbd>G</kbd> | 100 | **Mythic Boss Bot**: Shrouded in near-black armor, cycles into full invisibility every 15s, regenerates HP after 3s without hits, and has zero dash cooldown mid-air. Switches between its mace up close and a bow at range, and parries dashes more often. |
 | **Local 2-Player** | <kbd>2</kbd> | 100 | True head-to-head PvP duel on a single keyboard. |
 | **Custom Sandbox** | <kbd>C</kbd> | Custom | Tweak any of the 31 bot AI parameters in real time (speed, dodge rate, slam chance, invis, regen, etc.). |
 

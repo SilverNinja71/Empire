@@ -82,7 +82,36 @@ export function randomClassId() {
 export const ARENA_CONFIG = {
     width: 800,
     height: 440,             // Taller view so the ground layers are visible
-    groundY: 390
+    groundY: 390,
+
+    // Wind Geyser pads set into the main floor: stepping on one launches you straight up
+    // with your dash and double jumps refreshed
+    geysers: [
+        { x: 60,  w: 40 },
+        { x: 700, w: 40 }
+    ],
+    geyserLaunch: -11.5,     // upward launch speed
+    geyserCooldown: 12       // frames before the same fighter can be launched again
+};
+
+// Freeze frames on heavy hits: any hit of minDamage or more holds the action still for
+// min(maxFrames, floor(damage / perFrame)) physics frames while effects keep playing
+export const HITSTOP_CONFIG = {
+    minDamage: 30,
+    perFrame: 12,
+    maxFrames: 7
+};
+
+// Parry (F or Left Shift; Player 2 in local PvP uses /) and head-on dash clashes.
+// Times are physics frames.
+export const PARRY_CONFIG = {
+    window: 8,               // the guard is up for this many frames
+    cooldown: 45,            // frames before you can parry again
+    attackerStun: 20,        // a parried attacker is stunned this long
+    bounceX: 9,              // both fighters are knocked apart this hard...
+    bounceY: -6,             // ...and popped up a little
+    hitStop: 5,              // freeze frames on every parry and clash
+    safeFrames: 12           // the parrying fighter can't be hit again straight away
 };
 
 export const CORE_PHYSICS = {
@@ -152,7 +181,9 @@ export const BOT_SETTINGS = {
     invisible:          { practice: 0,   easy: 0,   normal: 0,   pro: 0,   god: 1 },
     invisEvery:         { practice: 900, easy: 900, normal: 900, pro: 900, god: 720 },
     invisLength:        { practice: 300, easy: 300, normal: 300, pro: 300, god: 420 },
-    regen:              { practice: 0,   easy: 0,   normal: 0,   pro: 0,   god: 0.05 }
+    regen:              { practice: 0,   easy: 0,   normal: 0,   pro: 0,   god: 0.05 },
+    parryChance:        { practice: 0,   easy: 0,   normal: 0,   pro: 35,  god: 60 },  // % to parry a dash aimed at the bot within 90px
+    weaponSwap:         { practice: 0,   easy: 0,   normal: 0,   pro: 1,   god: 1 }    // 1 = swap to the loadout weapon that suits the distance
 };
 
 export const MODE_METADATA = {

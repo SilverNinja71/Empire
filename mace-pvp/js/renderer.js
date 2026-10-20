@@ -5,8 +5,11 @@
 // and multi-fighter 1v1, 2v2, 5v5 team arena matches
 // ==========================================
 
-import { ARENA_CONFIG, PLATFORMS_CONFIG, CLASSES, GAME_SPEED } from './config.js';
+import { ARENA_CONFIG, PLATFORMS_CONFIG, CLASSES, GAME_SPEED, PARRY_CONFIG } from './config.js';
 import { weaponIconURL } from './pixel.js';
+
+// Wind charge swirl over a geyser grate: 8 pixel offsets around a circle, stepped for a blocky spin
+const GEYSER_SWIRL = [[6, 0], [4, -4], [0, -6], [-4, -4], [-6, 0], [-4, 4], [0, 6], [4, 4]];
 
 export class Renderer {
     constructor(canvas) {
@@ -655,6 +658,145 @@ export class Renderer {
                 }
             }
         }
+    }
+
+    // Wind Geyser pads on the main floor: a vent grate with wind gusting up out of it.
+    // Everything is procedural from the frame counter (no per-frame allocations).
+    drawGeysers() {
+        const pads = ARENA_CONFIG.geysers;
+        if (!pads || !pads.length) return;
+        const ctx = this.ctx;
+        const floor = ARENA_CONFIG.groundY;
+        const t = this.frameCount;
+        if (!this.geyserGradients) this.geyserGradients = [];
+
+        ctx.save();
+        for (let i = 0; i < pads.length; i++) {
+            const g = pads[i];
+            const cx = g.x + g.w / 2;
+
+            // Soft rising air column (gradient built once per pad)
+            let grad = this.geyserGradients[i];
+            if (!grad) {
+                grad = ctx.createLinearGradient(0, floor - 170, 0, floor);
+                grad.addColorStop(0, "rgba(160, 235, 255, 0)");
+                grad.addColorStop(1, "rgba(160, 235, 255, 0.3)");
+                this.geyserGradients[i] = grad;
+            }
+            const colW = Math.round(g.w * (0.8 + 0.2 * Math.sin(t * 0.12 + i * 1.7)));
+            ctx.globalAlpha = 1;
+            ctx.fillStyle = grad;
+            ctx.fillRect(Math.round(cx - colW / 2), floor - 170, colW, 170);
+
+            // Gusts: short streaks that rise and fade
+            for (let k = 0; k < 10; k++) {
+                const rise = (t * 2.4 + k * 41 + i * 17) % 160;
+                const sx = g.x + 4 + ((k * 13 + i * 7) % (g.w - 8)) + Math.round(Math.sin((t + k * 20) * 0.08) * 3);
+                ctx.globalAlpha = 0.85 * (1 - rise / 160);
+                ctx.fillStyle = k % 3 === 0 ? "#ffffff" : "#7ff0ff";
+                ctx.fillRect(Math.round(sx), Math.round(floor - 8 - rise), 2, 7);
+            }
+
+            // Vent grate set into the floor, with glowing slots
+            ctx.globalAlpha = 1;
+            ctx.fillStyle = "#1f2731";
+            ctx.fillRect(g.x - 3, floor - 4, g.w + 6, 9);
+            ctx.fillStyle = "#5c6b7d";
+            ctx.fillRect(g.x - 3, floor - 4, g.w + 6, 2);
+            ctx.fillStyle = "#3a4654";
+            ctx.fillRect(g.x - 3, floor + 3, g.w + 6, 2);
+            ctx.globalAlpha = 0.55 + 0.45 * Math.sin(t * 0.2 + i * 2);
+            ctx.fillStyle = "#7ff0ff";
+            for (let s = 0; s < 4; s++) ctx.fillRect(g.x + 2 + s * 10, floor - 1, 6, 3);
+
+            // Little wind charge swirl hovering over the grate
+            ctx.globalAlpha = 0.9;
+            ctx.fillStyle = "#e8fbff";
+            const step = Math.floor(t / 5);
+            for (let k = 0; k < 3; k++) {
+                const o = GEYSER_SWIRL[(step + k * 3) % GEYSER_SWIRL.length];
+                ctx.fillRect(cx + o[0] - 1, floor - 16 + o[1] - 1, 3, 3);
+            }
+        }
+        ctx.restore();
+    }
+
+    // Parry guard: bright white corner brackets that snap outward while the guard is up
+    drawParryGuard(f) {
+        if (f.hp <= 0 || !(f.parryWindow > 0)) return;
+        const ctx = this.ctx;
+        const k = 1 - f.parryWindow / PARRY_CONFIG.window; // 0 when raised -> 1 as it ends
+        const pad = 4 + Math.round(k * 6);
+        const x = Math.round(f.x - pad);
+        const y = Math.round(f.y - pad);
+        const w = Math.round(f.w + pad * 2);
+        const h = Math.round(f.h + pad * 2);
+        const arm = 7;
+
+        ctx.save();
+        ctx.globalAlpha = 0.95 - k * 0.45;
+        ctx.fillStyle = "#ffffff";
+        ctx.fillRect(x, y, arm, 3);
+        ctx.fillRect(x, y, 3, arm);
+        ctx.fillRect(x + w - arm, y, arm, 3);
+        ctx.fillRect(x + w - 3, y, 3, arm);
+        ctx.fillRect(x, y + h - 3, arm, 3);
+        ctx.fillRect(x, y + h - arm, 3, arm);
+        ctx.fillRect(x + w - arm, y + h - 3, arm, 3);
+        ctx.fillRect(x + w - 3, y + h - arm, 3, arm);
+        ctx.globalAlpha = 0.18 * (1 - k);
+        ctx.fillStyle = "#bff4ff";
+        ctx.fillRect(x + 3, y + 3, w - 6, h - 6);
+        ctx.restore();
+    }
+
+    // Parry readiness beside the weapon hotbar: a small shield that greys out while it recharges
+    drawParryMeter(f) {
+        if (!f || f.hp <= 0) return;
+        const ctx = this.ctx;
+        ctx.save();
+        ctx.font = "16px VT323, monospace";
+        // Sit just right of the hotbar's "Q: swap" label (measured once; drawLoadoutHotbar draws it at x = 86)
+        if (!this.swapLabelW) this.swapLabelW = ctx.measureText("Q: swap").width;
+        const hasHotbar = f.loadout && f.loadout.length >= 2;
+        const x = hasHotbar ? Math.round(86 + this.swapLabelW + 14) : 14;
+        const cy = this.height - 29; // vertical centre of the hotbar row
+        const cooling = f.parryCooldown > 0;
+        const guard = f.parryWindow > 0;
+        const body = guard ? "#ffffff" : (cooling ? "#6b7380" : "#d9f6ff");
+        const trim = guard ? "#7ff0ff" : (cooling ? "#4a515c" : "#3fb6d9");
+
+        // Pixel shield (12 x 14) with a black outline
+        ctx.fillStyle = "#000000";
+        ctx.fillRect(x - 1, cy - 8, 14, 11);
+        ctx.fillRect(x, cy + 3, 12, 3);
+        ctx.fillRect(x + 2, cy + 6, 8, 2);
+        ctx.fillRect(x + 4, cy + 8, 4, 2);
+        ctx.fillStyle = body;
+        ctx.fillRect(x, cy - 7, 12, 10);
+        ctx.fillRect(x + 1, cy + 3, 10, 2);
+        ctx.fillRect(x + 3, cy + 5, 6, 2);
+        ctx.fillRect(x + 5, cy + 7, 2, 2);
+        ctx.fillStyle = trim;
+        ctx.fillRect(x + 5, cy - 6, 2, 11);
+        ctx.fillRect(x + 1, cy - 3, 10, 2);
+
+        // Label and recharge bar
+        ctx.textAlign = "left";
+        ctx.textBaseline = "middle";
+        ctx.strokeStyle = "#000000";
+        ctx.lineWidth = 3;
+        ctx.strokeText("F: parry", x + 18, cy - 2);
+        ctx.fillStyle = cooling ? "#9aa1ab" : "#ffffff";
+        ctx.fillText("F: parry", x + 18, cy - 2);
+        if (cooling) {
+            const frac = 1 - f.parryCooldown / PARRY_CONFIG.cooldown;
+            ctx.fillStyle = "rgba(0, 0, 0, 0.6)";
+            ctx.fillRect(x + 18, cy + 7, 44, 4);
+            ctx.fillStyle = "#7ff0ff";
+            ctx.fillRect(x + 18, cy + 7, Math.round(44 * frac), 4);
+        }
+        ctx.restore();
     }
 
     // ==========================================
@@ -1560,8 +1702,8 @@ export class Renderer {
         ctx.save();
         ctx.globalAlpha = alpha;
 
-        // On the ground strip at the bottom, right of the weapon hotbar, so it never covers the HUD
-        const bannerX = 170;
+        // On the ground strip at the bottom, right of the weapon hotbar and parry meter, so it never covers the HUD
+        const bannerX = 240;
         const bannerW = this.width - bannerX - 14;
         const bannerH = 18;
         const bannerY = this.height - 34;
@@ -1577,10 +1719,11 @@ export class Renderer {
         ctx.textAlign = "center";
         ctx.textBaseline = "middle";
 
+        const textX = bannerX + bannerW / 2;
         if (isPvP) {
-            ctx.fillText("P1: WASD = MOVE/JUMP | SPACE = DASH/ATTACK | S = SLAM   ••   P2: ARROWS | ENTER = ATTACK | DOWN = SLAM", this.width / 2, bannerY + bannerH / 2);
+            ctx.fillText("P1: WASD • SPACE HIT • S SLAM • F PARRY   ••   P2: ARROWS • ENTER HIT • DOWN SLAM • / PARRY", textX, bannerY + bannerH / 2);
         } else {
-            ctx.fillText("WASD / ARROWS = MOVE • SPACE / CLICK = ATTACK • S / DOWN = SLAM • Q = SWAP WEAPON • ESC = PAUSE", this.width / 2, bannerY + bannerH / 2);
+            ctx.fillText("WASD MOVE • SPACE/CLICK ATTACK • S SLAM • F/SHIFT PARRY • Q SWAP • ESC PAUSE", textX, bannerY + bannerH / 2);
         }
 
         ctx.restore();

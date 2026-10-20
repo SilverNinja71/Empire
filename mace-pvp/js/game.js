@@ -4,7 +4,7 @@
 // Arrows projectile system, and 1v1 / 2v2 / 5v5 Team Arena matches
 // ==========================================
 
-import { ARENA_CONFIG, PLATFORMS_CONFIG, BOT_SETTINGS, MODE_METADATA, getBotParamsForMode, GAME_SPEED, PLAYER_MOVE_SPEED, CLASSES, randomClassId } from './config.js';
+import { ARENA_CONFIG, PLATFORMS_CONFIG, BOT_SETTINGS, MODE_METADATA, getBotParamsForMode, GAME_SPEED, PLAYER_MOVE_SPEED, CLASSES, randomClassId, HITSTOP_CONFIG, PARRY_CONFIG } from './config.js';
 import { sound } from './audio.js';
 import { ParticleManager } from './particles.js';
 import { Fighter } from './entity.js';
@@ -73,6 +73,18 @@ export class Game {
 
         this.flash = 0; // white screen flash strength (heavy hits / KOs)
 
+        // Freeze frames left after a heavy hit, parry or clash (physics and combat pause, effects keep playing)
+        this.hitStop = 0;
+
+        // Parries and clashes from the combat engine (hit-stop + online FX)
+        this.combat.onClash = (kind, x, y) => this.onParryEvent(kind, x, y);
+
+        // Created once so the per-frame arrow update allocates nothing for parries
+        this.onArrowParry = (defender, arrow) => {
+            const shooter = this.allFighters.find(f => f.id === arrow.ownerId) || null;
+            this.combat.parryArrow(defender, arrow, shooter);
+        };
+
         // Mouse position in arena coordinates (for aiming the bow)
         this.mouse = { x: 0, y: 0, active: false };
 
@@ -115,6 +127,7 @@ export class Game {
         this.respawnQueue = [];
         this.highestJumper = null;
         this.winnerTeam = null;
+        this.hitStop = 0;
 
         const maxHp = (mode === "practice") ? 1000 : (this.botParams.maxHP || 100);
         const user = auth.getUser();
@@ -132,7 +145,10 @@ export class Game {
         const botMeta = MODE_METADATA[mode] || { name: "Bot" };
         this.bot.reset(650, -1, maxHp);
         this.bot.name = (mode === "pvp") ? "Player 2" : `[BOT] ${botMeta.name}`;
-        this.bot.setLoadout(mode === "god" ? "mace" : (mode === "pro" ? "sword" : "spear"));
+        // Pro and God bots carry a second weapon and swap to whichever suits the distance
+        if (mode === "god") this.bot.setLoadout("mace", "bow");
+        else if (mode === "pro") this.bot.setLoadout("sword", "spear");
+        else this.bot.setLoadout("spear");
         this.bot.setSkin(mode === "god" ? "enderman" : (mode === "pro" ? "diamond_knight" : "alex"));
         this.bot.setClass((mode === "pvp" || mode === "practice") ? "normal" : randomClassId());
         this.bot.setTeam("red"); // OPPONENT IS ALWAYS RED
@@ -350,6 +366,9 @@ export class Game {
             if (msg.a === "slam") f.slam();
             if (msg.a === "swap") f.swapWeapon();
             if (msg.a === "size") f.toggleSize();
+            if (msg.a === "parry") f.parry();
+        } else if (msg.t === "fx" && this.isOnlineGuest() && this.state === "play") {
+            this.playNetFx(msg);
         } else if (msg.t === "end" && this.isOnlineGuest() && this.state === "play") {
             msg.stats.forEach((st, i) => { this.allFighters[i].stats = st; });
             this.finishMatch(msg.w === this.localFighter.team);
@@ -444,6 +463,7 @@ export class Game {
         this.respawnQueue = [];
         this.highestJumper = null;
         this.winnerTeam = null;
+        this.hitStop = 0;
 
         this.state = "play";
 
@@ -462,7 +482,10 @@ export class Game {
         const maxHp = (this.mode === "practice") ? 1000 : (this.botParams.maxHP || 100);
         this.player.reset(150, 1, maxHp);
         this.bot.reset(650, -1, maxHp);
+        // Bots with two weapons start the rematch on their primary again
+        if (this.bot.loadout && this.bot.loadout.length > 1) this.bot.setLoadout(this.bot.loadout[0], this.bot.loadout[1]);
         this.botAI.reset();
+        this.hitStop = 0;
         this.bot._botAI = this.botAI;
         this.allFighters = [this.player, this.bot];
         this.arrowManager.reset();
@@ -534,6 +557,7 @@ export class Game {
         if (action === "slam") f.slam();
         if (action === "swap") f.swapWeapon();
         if (action === "size") f.toggleSize();
+        if (action === "parry") f.parry();
     }
 
     // Space / left-click attack for the local fighter (bow shots go toward the mouse)
@@ -601,7 +625,7 @@ export class Game {
             const t = e.target;
             if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
 
-            const gameKeys = ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Space", "KeyW", "KeyS", "KeyA", "KeyD"];
+            const gameKeys = ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Space", "KeyW", "KeyS", "KeyA", "KeyD", "KeyF", "Slash"];
             if (gameKeys.includes(e.code) && this.state !== "menu") {
                 e.preventDefault();
             }
@@ -671,6 +695,7 @@ export class Game {
                 if (e.code === "ArrowDown" || e.code === "KeyS") online.send({ t: "act", a: "slam" });
                 if (e.code === "KeyQ") online.send({ t: "act", a: "swap" });
                 if (e.code === "KeyB") online.send({ t: "act", a: "size" });
+                if (e.code === "KeyF" || e.code === "ShiftLeft") online.send({ t: "act", a: "parry" });
                 return;
             }
 
@@ -690,6 +715,11 @@ export class Game {
             // --- Buddha class: grow big / shrink ---
             if (e.code === "KeyB") {
                 this.localFighter.toggleSize();
+            }
+
+            // --- Parry: short guard that negates the next slam, dash or arrow ---
+            if (e.code === "KeyF" || e.code === "ShiftLeft") {
+                this.localFighter.parry();
             }
 
             // --- Player 1 Weapon Attack / Dash / Bow Shoot ---
@@ -712,6 +742,9 @@ export class Game {
                 }
                 if (e.code === "ArrowDown") {
                     this.bot.slam();
+                }
+                if (e.code === "Slash") {
+                    this.bot.parry();
                 }
             }
         });
@@ -846,6 +879,64 @@ export class Game {
         return this.isDifficultyBot(defender) ? (this.botParams.stunMult ?? 1) : 1;
     }
 
+    // Freeze frames for heavy hits: min(7, floor(damage / 12)) frames for any hit of 30+
+    registerHit(dmg) {
+        if (dmg < HITSTOP_CONFIG.minDamage) return;
+        const frames = Math.min(HITSTOP_CONFIG.maxFrames, Math.floor(dmg / HITSTOP_CONFIG.perFrame));
+        if (frames > this.hitStop) this.hitStop = frames;
+    }
+
+    // Parries and clashes freeze the action briefly and are mirrored to online guests
+    onParryEvent(kind, x, y) {
+        if (PARRY_CONFIG.hitStop > this.hitStop) this.hitStop = PARRY_CONFIG.hitStop;
+        this.flash = Math.max(this.flash, kind === "parry" ? 0.25 : 0.15);
+        if (this.mode === "online" && this.onlineRole === "host") {
+            online.send({ t: "fx", k: kind, x: Math.round(x), y: Math.round(y) });
+        }
+    }
+
+    // Online guest: replay effects for events the host announces (snapshots carry no events)
+    playNetFx(msg) {
+        if (msg.k === "parry" || msg.k === "clash") {
+            this.combat.playParryFX(msg.k, msg.x, msg.y);
+            this.flash = Math.max(this.flash, msg.k === "parry" ? 0.25 : 0.15);
+        } else if (msg.k === "geyser") {
+            this.particles.addWind(msg.x, ARENA_CONFIG.groundY, 14);
+            sound.playGeyser();
+        }
+    }
+
+    // Wind Geyser pads: anyone standing on one is launched straight up with dash and double jumps refreshed
+    applyGeyser(f) {
+        if (f.hp <= 0 || !f.onGround || f.geyserCd > 0) return;
+        if (Math.abs(f.y + f.h - ARENA_CONFIG.groundY) > 1) return; // main floor only
+        const cx = f.x + f.w / 2;
+        const pads = ARENA_CONFIG.geysers;
+        for (let i = 0; i < pads.length; i++) {
+            const g = pads[i];
+            if (cx < g.x || cx > g.x + g.w) continue;
+
+            f.yVel = ARENA_CONFIG.geyserLaunch;
+            f.onGround = false;
+            f.coyoteTimer = 0;
+            f.slamming = false;
+            f.dashReady = true;
+            f.dashCooldown = 0;
+            f.jumpsLeft = 2;
+            f.geyserCd = ARENA_CONFIG.geyserCooldown;
+            f.squashX = 0.75;
+            f.squashY = 1.35;
+
+            const gx = g.x + g.w / 2;
+            this.particles.addWind(gx, ARENA_CONFIG.groundY, 14);
+            sound.playGeyser();
+            if (this.mode === "online" && this.onlineRole === "host") {
+                online.send({ t: "fx", k: "geyser", x: Math.round(gx) });
+            }
+            return;
+        }
+    }
+
     update() {
         if (this.state !== "play") {
             this.particles.update();
@@ -855,6 +946,14 @@ export class Game {
         if (this.isOnlineGuest()) {
             // The host simulates; we only animate effects and send our input
             this.handleContinuousInput();
+            this.particles.update();
+            return;
+        }
+
+        // Hit-stop: hold the match still for a few frames after a heavy hit, parry or clash,
+        // while sparks, shockwaves and screen shake keep moving
+        if (this.hitStop > 0) {
+            this.hitStop--;
             this.particles.update();
             return;
         }
@@ -886,7 +985,7 @@ export class Game {
                 ai.update(nearest);
 
                 // If bot has bow and is in line with target, shoot arrow
-                if (fighter.weaponId === "bow" && fighter.arrowCooldown <= 0 && Math.abs(nearest.y - fighter.y) < 50) {
+                if (fighter.weaponId === "bow" && fighter.arrowCooldown <= 0 && fighter.parryWindow <= 0 && Math.abs(nearest.y - fighter.y) < 50) {
                     fighter.dash(null, true, null, this.arrowManager);
                 }
             }
@@ -915,6 +1014,7 @@ export class Game {
                     this.combat.checkGroundSlam(f, def, this.hitDamageMult(f, def), this.hitStunMult(def), (dmg, atk, defender) => {
                         if (defender._botAI) defender._botAI.onHit();
                         if (dmg >= 50) this.flash = Math.max(this.flash, 0.3);
+                        this.registerHit(dmg);
                         if (this.isTiebreaker) {
                             if (atk.team === "red" || (!atk.team && atk === this.player)) {
                                 this.tiebreakerRedDamage += dmg;
@@ -925,6 +1025,9 @@ export class Game {
                     });
                 }
             }
+
+            // Wind Geyser pads launch anyone standing on them
+            this.applyGeyser(f);
         }
 
         // Decisive push-separation between overlapping fighters so models never fuse together
@@ -961,6 +1064,7 @@ export class Game {
             this.particles.addHitSparks(arrow.x, arrow.y, 10, "#e74c3c");
             this.particles.addDamageText(hitFighter.x + hitFighter.w / 2, hitFighter.y, arrowDmg, false);
             this.particles.triggerShake(4, 6);
+            this.registerHit(arrowDmg);
 
             if (hitFighter._botAI) hitFighter._botAI.onHit();
             const arrowShooter = this.allFighters.find(f => f.id === arrow.ownerId);
@@ -976,7 +1080,7 @@ export class Game {
                     }
                 }
             }
-        });
+        }, this.onArrowParry);
 
         // Resolve mid-air slams and dash collisions between opposing teams (zero temporary array allocation)
         for (let i = 0; i < this.redTeam.length; i++) {
@@ -989,11 +1093,13 @@ export class Game {
                 this.combat.checkAirSlam(atk, def, this.hitDamageMult(atk, def), this.hitStunMult(def), (dmg) => {
                     if (def._botAI) def._botAI.onHit();
                     if (dmg >= 50) this.flash = Math.max(this.flash, 0.3);
+                    this.registerHit(dmg);
                     if (this.isTiebreaker) this.tiebreakerRedDamage += dmg;
                 });
                 this.combat.checkDashHit(atk, def, this.hitDamageMult(atk, def), this.hitStunMult(def), (dmg) => {
                     if (def._botAI) def._botAI.onHit();
                     if (dmg >= 50) this.flash = Math.max(this.flash, 0.3);
+                    this.registerHit(dmg);
                     if (this.isTiebreaker) this.tiebreakerRedDamage += dmg;
                 });
             }
@@ -1009,11 +1115,13 @@ export class Game {
                 this.combat.checkAirSlam(atk, def, this.hitDamageMult(atk, def), this.hitStunMult(def), (dmg) => {
                     if (def._botAI) def._botAI.onHit();
                     if (dmg >= 50) this.flash = Math.max(this.flash, 0.3);
+                    this.registerHit(dmg);
                     if (this.isTiebreaker) this.tiebreakerBlueDamage += dmg;
                 });
                 this.combat.checkDashHit(atk, def, this.hitDamageMult(atk, def), this.hitStunMult(def), (dmg) => {
                     if (def._botAI) def._botAI.onHit();
                     if (dmg >= 50) this.flash = Math.max(this.flash, 0.3);
+                    this.registerHit(dmg);
                     if (this.isTiebreaker) this.tiebreakerBlueDamage += dmg;
                 });
             }
@@ -1204,6 +1312,7 @@ export class Game {
 
         this.renderer.drawBackground();
         this.renderer.drawPlatforms();
+        this.renderer.drawGeysers();
 
         const botMeta = this.mode === "online"
             ? { ...(MODE_METADATA.pvp || MODE_METADATA.normal), name: "Online Duel" }
@@ -1227,6 +1336,7 @@ export class Game {
                 this.renderer.drawFighter(f, botColor, isMultiplayer);
             }
             this.renderer.drawStatusEffects(f);
+            if (f.parryWindow > 0) this.renderer.drawParryGuard(f);
             const indR = f.team === "red" ? 255 : (f.team === "blue" ? 30 : 46);
             const indG = f.team === "red" ? 71 : (f.team === "blue" ? 144 : 204);
             const indB = f.team === "red" ? 87 : (f.team === "blue" ? 255 : 113);
@@ -1278,6 +1388,8 @@ export class Game {
         if (this.state === "play") {
             this.renderer.drawLoadoutHotbar(this.localFighter);
             this.renderer.drawClassStatus(this.localFighter);
+            // The host owns parry timers in online play, so guests don't get a (stale) meter
+            if (!this.isOnlineGuest()) this.renderer.drawParryMeter(this.localFighter);
         }
 
         // Hit / KO flash, fading out

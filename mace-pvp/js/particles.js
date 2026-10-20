@@ -91,6 +91,24 @@ export class ParticleManager {
         }
     }
 
+    // Upward gusts for Wind Geyser launches
+    addWind(x, y, count = 12) {
+        for (let i = 0; i < count; i++) {
+            this.particles.push({
+                x: x + (Math.random() * 30 - 15),
+                y: y - Math.random() * 6,
+                vx: (Math.random() - 0.5) * 1.2,
+                vy: -3.5 - Math.random() * 4,
+                gravity: 0.06, // gusts slow down as they rise
+                size: 2 + Math.random() * 3,
+                alpha: 0.9,
+                decay: 0.03 + Math.random() * 0.02,
+                color: i % 3 === 0 ? "#ffffff" : "rgba(127, 240, 255, 0.9)",
+                type: "wind"
+            });
+        }
+    }
+
     addFloatingText(x, y, text, color = "#ffffff", isCrit = false, scale = 1.0) {
         this.floatingTexts.push({
             x: x + (Math.random() * 20 - 10),
