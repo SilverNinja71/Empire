@@ -561,6 +561,52 @@ function makeNameTag(c) {
   return sp;
 }
 
+// ----------------------------------------------------------- duty badges (STRIKER / GOALIE / SWEEPER over a bot's name tag)
+const PG_DUTY = { striker: ['STRIKER', '#ff5fa8'], goalie: ['GOALIE', '#ffd23f'], sweeper: ['SWEEPER', '#72dc4e'] };
+function pgDrawBadge(g, w, h, duty) {
+  const F = '"Lilita One", "Arial Black", sans-serif', ink = '#1b1d3a', [label, col] = PG_DUTY[duty];
+  g.clearRect(0, 0, w, h);
+  g.font = `62px ${F}`;
+  const tw = Math.min(w - 12, g.measureText(label).width + 112), x0 = (w - tw) / 2, y0 = 14, th = 96;
+  g.lineJoin = 'round';
+  g.beginPath(); g.roundRect(x0, y0, tw, th, th / 2); g.fillStyle = '#fff'; g.fill(); g.lineWidth = 6; g.strokeStyle = ink; g.stroke();
+  g.beginPath(); g.roundRect(x0 + 9, y0 + 9, tw - 18, th - 18, (th - 18) / 2); g.fillStyle = col; g.fill();
+  // icon: a star for strikers, a shield for the keepers
+  g.save(); g.translate(x0 + 52, y0 + th / 2); g.beginPath();
+  if (duty === 'striker') { for (let i = 0; i < 10; i++) { const a = i * Math.PI / 5 - Math.PI / 2, r = i % 2 ? 12 : 28; g.lineTo(Math.cos(a) * r, Math.sin(a) * r + 2); } g.closePath(); }
+  else { g.moveTo(0, -26); g.lineTo(22, -17); g.quadraticCurveTo(22, 14, 0, 28); g.quadraticCurveTo(-22, 14, -22, -17); g.closePath(); }
+  g.fillStyle = '#fff'; g.fill(); g.lineWidth = 5; g.strokeStyle = ink; g.stroke(); g.restore();
+  g.textAlign = 'left'; g.textBaseline = 'middle';
+  g.lineWidth = 12; g.strokeStyle = ink; g.strokeText(label, x0 + 88, y0 + th / 2 + 4); g.fillStyle = '#fff'; g.fillText(label, x0 + 88, y0 + th / 2 + 4);
+}
+const pgBadgeTex = {};
+function pgBadge(duty) {
+  let t = pgBadgeTex[duty];
+  if (t) return t;
+  t = pgBadgeTex[duty] = canvasTex(512, 128, (g, w, h) => pgDrawBadge(g, w, h, duty));
+  t.anisotropy = 8;
+  if (document.fonts && !document.fonts.check('62px "Lilita One"')) document.fonts.load('62px "Lilita One"').then(() => { pgDrawBadge(t.image.getContext('2d'), 512, 128, duty); t.needsUpdate = true; }).catch(() => {});
+  return t;
+}
+// charge ring: an arc under the penguin that fills while a charged shot winds up (pulses violet once it's ready)
+const pgChargeGeo = (() => { const g = new THREE.RingGeometry(0.72, 0.95, 48, 1); g.rotateX(-Math.PI / 2); return g; })();
+function pgChargeRing() {
+  const m = new THREE.Mesh(pgChargeGeo, new THREE.ShaderMaterial({
+    uniforms: { uP: { value: 0 }, uR: { value: 0 }, uT: { value: 0 } },
+    vertexShader: 'varying vec2 vL; void main(){ vL = position.xz; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+    fragmentShader: `uniform float uP, uR, uT; varying vec2 vL;
+void main(){
+  float a = fract(atan(vL.x, -vL.y) / 6.2831853 + 0.5), on = step(a, uP);
+  vec3 c = mix(vec3(0.55, 0.9, 1.0), vec3(0.78, 0.6, 1.0), uR) * (1.5 + uR * (0.7 + 0.5 * sin(uT * 18.0)));
+  gl_FragColor = vec4(c, mix(0.16, 0.95, on));
+  #include <colorspace_fragment>
+}`,
+    transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
+  }));
+  m.renderOrder = 3; m.visible = false; m.frustumCulled = false;
+  return m;
+}
+
 // ----------------------------------------------------------- penguin view
 const _vp = new V3(), _vq = new Q(), _vl = new V3(), _vm = new THREE.Matrix4();
 const pgGlowIdle = new THREE.Color(0x6a2f3e), pgGlowHot = new THREE.Color(0xffe08a).multiplyScalar(2.2);
@@ -571,17 +617,20 @@ class PenguinView {
     this.m = buildPenguin(car.team, car.cos, { gold: car.gold });
     scene.add(this.m.root);
     this.tag = makeNameTag(car); scene.add(this.tag);
+    this.badge = new THREE.Sprite(new THREE.SpriteMaterial({ transparent: true, depthWrite: false })); this.badge.renderOrder = 5; this.badge.visible = false; scene.add(this.badge);
+    this.cring = pgChargeRing(); scene.add(this.cring);
     this.t = rand(0, 10); this.blinkT = rand(1, 4); this.squash = 0; this.lean = 0; this.trailAcc = 0; this.headYaw = 0; this.headPitch = 0; this.flap = 0;
-    this.amp = 0.1; this.base = 0; this.jawA = 0; this.glowK = 0; this.det = 0; this.wind = 0; this.dbl = false; this.far = false; this.excite = false;
+    this.amp = 0.1; this.base = 0; this.jawA = 0; this.glowK = 0; this.det = 0; this.wind = 0; this.dbl = false; this.far = false; this.excite = false; this.duty = null;
   }
   dispose() {
     const m = this.m;
     scene.remove(m.root); scene.remove(this.tag); this.tag.material.map.dispose(); this.tag.material.dispose();
+    scene.remove(this.badge); this.badge.material.dispose(); scene.remove(this.cring); this.cring.material.dispose();
     m.flameMat.dispose(); m.coreMat.dispose(); m.glowMat.dispose(); m.glow.material.dispose();
   }
   update(dt, alpha, ballP, showTag) {
     const c = this.car, m = this.m;
-    if (c.demolished) { m.root.visible = false; this.tag.visible = false; return; }
+    if (c.demolished) { m.root.visible = false; this.tag.visible = false; this.badge.visible = false; this.cring.visible = false; return; }
     m.root.visible = true;
     m.root.position.lerpVectors(c.pp, c.p, alpha);
     m.root.quaternion.slerpQuaternions(c.pq, c.q, alpha);
@@ -664,11 +713,30 @@ class PenguinView {
       _vp.set(rand(-0.35, 0.35), -0.28, -0.65).applyMatrix4(m.root.matrixWorld);
       FX.puff(_vp.x, _vp.y, _vp.z, rand(-1, 1), rand(0.5, 1.5), rand(-1, 1), 0.08, 0.22, 0.45, 0xf2f9ff, -2, 2);
     }
+    // charged shot winding up: ring under the belly (everyone sees the bots charge too)
+    const cr = this.cring;
+    cr.visible = c.charge > 0.01;
+    if (cr.visible) {
+      _vl.set(0, 1, 0).applyQuaternion(m.root.quaternion);
+      cr.position.copy(m.root.position).addScaledVector(_vl, -RIDE_H + 0.05); cr.quaternion.copy(m.root.quaternion);
+      cr.scale.setScalar(1 + 0.06 * Math.sin(this.t * 12));
+      const u = cr.material.uniforms; u.uP.value = c.charge; u.uR.value = c.charge >= CHARGE_MIN ? 1 : 0; u.uT.value = this.t;
+    }
+    // ice-crystal speed burst: frosty glints stream off the penguin
+    if (c.burstT > 0 && Math.random() < dt * 45) {
+      m.root.updateMatrixWorld();
+      _vp.set(rand(-0.45, 0.45), rand(0.1, 0.9), -0.55).applyMatrix4(m.root.matrixWorld);
+      FX.spark(_vp.x, _vp.y, _vp.z, -c.v.x * 0.15, 0.6, -c.v.z * 0.15, rand(0.22, 0.38), 0.45, Math.random() < 0.5 ? 0xc8f6ff : 0x5fdcff, 0, 2.5);
+    }
     this.tag.visible = showTag;
+    const duty = showTag && c.isBot && c.duty && PG_DUTY[c.duty] ? c.duty : null;
+    if (duty !== this.duty) { this.duty = duty; if (duty) { this.badge.material.map = pgBadge(duty); this.badge.material.needsUpdate = true; } }
+    this.badge.visible = !!duty;
     if (showTag) {
       this.tag.position.copy(m.root.position); this.tag.position.y += 1.5;
       const k = clamp(this.tag.position.distanceTo(camera.position) / 14, 1, 2.4);
       this.tag.scale.set(2 * k, 0.5 * k, 1);
+      if (duty) { this.badge.position.copy(this.tag.position); this.badge.position.y += 0.4 * k; this.badge.scale.set(1.06 * k, 0.265 * k, 1); }
     }
   }
 }

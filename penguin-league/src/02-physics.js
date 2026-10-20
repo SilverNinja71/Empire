@@ -49,19 +49,28 @@ function arenaN(x, y, z, out) {
 
 // ----------------------------------------------------------- ball
 const BALL_R = 1.15, BALL_MAX = 66, BALL_MASS = 30, CAR_MASS = 180;
+// spin: sidespin (about the vertical axis) bends the ball's path sideways (Magnus effect). It comes from glancing
+// hits, hits while turning and charged shots, survives bounces, and slowly bleeds away in the air and on the ice.
+const MAGNUS_K = 0.035, SPIN_HIT = 0.55, SPIN_MAX = 14, SIDESPIN_AIR_DECAY = 0.45, SIDESPIN_ICE_DECAY = 2.5;
+const CURVE_SPIN = 3;   // sidespin (rad/s) above which the curve ribbon shows
+// charged shots: hold to wind up (top speed drops a little while charging); the next touch spends the charge for
+// extra power plus curve in the direction you steer at contact. Same rules for every penguin, bot or human.
+const CHARGE_T = 0.8, CHARGE_FADE = 0.3, CHARGE_MIN = 0.25, CHARGE_CD = 0.6, CHARGE_POWER = 0.55, CHARGE_BASE = 9, CHARGE_SPIN = 9, CHARGE_SLOW = 0.15;
 class Ball {
   constructor() { this.p = new V3(); this.v = new V3(); this.w = new V3(); this.pp = new V3(); this.reset(); }
   reset() { this.p.set(0, BALL_R + 0.02, 0); this.v.set(0, 0, 0); this.w.set(0, 0, 0); this.pp.copy(this.p); }
 }
 const _bn = new V3(), _bt = new V3();
-// shared by the real ball and every prediction, so bots predict with the true rules
+// shared by the real ball and every prediction, so bots predict with the true rules (spin included)
 function stepBallPhys(b, dt) {
   b.v.y -= G * dt;
   const drag = 1 - 0.03 * dt; b.v.x *= drag; b.v.y *= drag; b.v.z *= drag;
+  // Magnus: (0, w.y, 0) x v pushes the ball sideways, perpendicular to its travel
+  if (b.w) { const sy = b.w.y; if (sy > 0.05 || sy < -0.05) { const vx = b.v.x, vz = b.v.z; b.v.x += MAGNUS_K * sy * vz * dt; b.v.z -= MAGNUS_K * sy * vx * dt; } }
   const s2 = b.v.lengthSq(); if (s2 > BALL_MAX * BALL_MAX) b.v.multiplyScalar(BALL_MAX / Math.sqrt(s2));
   b.p.x += b.v.x * dt; b.p.y += b.v.y * dt; b.p.z += b.v.z * dt;
   const D = arenaD(b.p.x, b.p.y, b.p.z);
-  if (D >= BALL_R) { if (b.w) b.w.multiplyScalar(1 - 0.1 * dt); return 0; }
+  if (D >= BALL_R) { if (b.w) { b.w.multiplyScalar(1 - 0.1 * dt); b.w.y *= 1 - SIDESPIN_AIR_DECAY * dt; } return 0; }
   arenaN(b.p.x, b.p.y, b.p.z, _bn);
   b.p.addScaledVector(_bn, BALL_R - D);
   const vn = b.v.dot(_bn);
@@ -76,13 +85,17 @@ function stepBallPhys(b, dt) {
   _bt.copy(b.v).addScaledVector(_bn, -b.v.dot(_bn));
   const tl2 = _bt.length();
   if (tl2 > 1e-4) b.v.addScaledVector(_bt, -Math.min(tl2, 0.4 * dt) / tl2);
-  if (b.w) b.w.crossVectors(_bn, b.v).multiplyScalar(1 / BALL_R);
+  if (b.w) {
+    const sy = b.w.y;
+    b.w.crossVectors(_bn, b.v).multiplyScalar(1 / BALL_R);
+    if (_bn.y > 0.7) b.w.y = sy * Math.max(0, 1 - SIDESPIN_ICE_DECAY * dt);   // rolling on the ice keeps (and slowly loses) its sidespin
+  }
   return impact;
 }
-const _gp = { p: new V3(), v: new V3() };
+const _gp = { p: new V3(), v: new V3(), w: new V3() };
 // +1 = ball ends up in the +Z (orange) net, -1 = -Z (blue) net, 0 = no goal within the horizon
-function predictGoal(p, v, horizon) {
-  _gp.p.copy(p); _gp.v.copy(v);
+function predictGoal(p, v, horizon, w) {
+  _gp.p.copy(p); _gp.v.copy(v); if (w) _gp.w.copy(w); else _gp.w.set(0, 0, 0);
   const n = Math.ceil(horizon * 60);
   for (let i = 0; i < n; i++) {
     stepBallPhys(_gp, 1 / 60);
@@ -111,6 +124,8 @@ const DIVE_KICK = 1.3;                 // extra hit power while diving (replaces
 // stabilised air control limits: nose down (W), nose up (S, for aerials), turn rate, easing rate.
 // There is no roll: penguins always stay level side to side.
 const AIR_NOSE_DOWN = 0.6, AIR_NOSE_UP = 1.35, AIR_YAW_RATE = 3.7, AIR_LEVEL_RATE = 6;
+// ice crystal pads: speed burst on top of the refill (top speed and acceleration x BURST_K, easing out at the end)
+const BURST_T = 1.5, BURST_K = 1.35, BURST_EASE = 0.45;
 const _eu = new THREE.Euler();
 const HB = new V3(0.42, 0.3, 0.74), HB_OFF = new V3(0, 0.02, 0.06); // ball hitbox (oriented box)
 let nextCarId = 1;
@@ -123,7 +138,7 @@ class Penguin {
     this.p = new V3(); this.v = new V3(); this.q = new Q(); this.w = new V3();
     this.pp = new V3(); this.pq = new Q();
     this.fwd = new V3(0, 0, 1); this.up = new V3(0, 1, 0); this.left = new V3(1, 0, 0); this.n = new V3(0, 1, 0);
-    this.ctrl = { throttle: 0, steer: 0, pitch: 0, roll: 0, jump: false, boost: false, slide: false };
+    this.ctrl = { throttle: 0, steer: 0, pitch: 0, roll: 0, jump: false, boost: false, slide: false, charge: false };
     this.stat = { score: 0, goals: 0, assists: 0, saves: 0, shots: 0, demos: 0, touches: 0 };
     this.events = [];
     this.role = 'attack';
@@ -135,6 +150,7 @@ class Penguin {
     this.jumping = false; this.jumpT = 0; this.jumpGrace = 0; this.flipT = 0; this.rightT = 0; this.turtleT = 0;
     this.prevJump = false; this.hitCd = 0; this.supersonic = false; this.boosting = false; this.touchingBad = false;
     this.demolished = false; this.respawnT = 0; this.landImpact = 0; this.justLanded = false; this.lastTouchT = -10;
+    this.charge = 0; this.chargeCd = 0; this.burstT = 0;
   }
   place(x, z, yaw) {
     this.p.set(x, RIDE_H, z); this.q.setFromAxisAngle(UP, yaw); this.pp.copy(this.p); this.pq.copy(this.q);
@@ -166,6 +182,13 @@ function stepPenguin(c, dt, M) {
   if (c.demolished) { c.respawnT -= dt; if (c.respawnT <= 0) M.respawn(c); return; }
   const k = c.ctrl, S = c.stats;
   updateBasis(c);
+  // crystal speed burst (eases out over its last BURST_EASE s) and the charged-shot wind-up
+  if (c.burstT > 0) c.burstT = Math.max(0, c.burstT - dt);
+  if (c.chargeCd > 0) c.chargeCd -= dt;
+  if (k.charge && c.chargeCd <= 0) c.charge = Math.min(1, c.charge + dt / CHARGE_T);
+  else if (c.charge > 0) c.charge = Math.max(0, c.charge - dt / CHARGE_FADE);
+  const bm = 1 + (BURST_K - 1) * Math.min(1, c.burstT / BURST_EASE);
+  const sm = bm * (k.charge ? 1 - CHARGE_SLOW * c.charge : 1);   // top-speed multiplier
   const jumpPressed = k.jump && !c.prevJump; c.prevJump = k.jump;
   c.hitCd -= dt; c.jumpGrace -= dt;
   const D = arenaD(c.p.x, c.p.y, c.p.z);
@@ -189,10 +212,10 @@ function stepPenguin(c, dt, M) {
     const thr = boosting ? 1 : k.throttle;
     let acc;
     if (thr * fs < 0 && Math.abs(fs) > 0.3) acc = -Math.sign(fs) * 35 * SPEED_K * Math.abs(thr);          // braking
-    else if (Math.abs(thr) > 0.02) acc = Math.sign(thr) * throttleAccel(Math.abs(fs), S.maxThrottle) * Math.abs(thr);
+    else if (Math.abs(thr) > 0.02) acc = Math.sign(thr) * throttleAccel(Math.abs(fs), S.maxThrottle * sm) * bm * Math.abs(thr);
     else acc = -Math.sign(fs) * Math.min(5.25 * SPEED_K, Math.abs(fs) / dt);                                 // coasting
     c.v.addScaledVector(c.fwd, acc * dt);
-    if (boosting) c.v.addScaledVector(c.fwd, S.boostAccel * dt);
+    if (boosting) c.v.addScaledVector(c.fwd, S.boostAccel * bm * dt);
     const sp = Math.abs(fs);
     const curv = curvature(sp) * S.turn * (k.slide ? 1.45 : 1);
     const yawRate = clamp(-k.steer * curv * fs, -7, 7);
@@ -265,12 +288,12 @@ function stepPenguin(c, dt, M) {
       const half = Math.acos(clamp(_qa.w, -1, 1)), sh = Math.sin(half);
       if (sh > 1e-6) c.w.set(_qa.x / sh, _qa.y / sh, _qa.z / sh).multiplyScalar(2 * half / dt); else c.w.set(0, 0, 0);
     }
-    if (boosting) c.v.addScaledVector(c.fwd, S.boostAccel * dt);
+    if (boosting) c.v.addScaledVector(c.fwd, S.boostAccel * bm * dt);
     c.v.addScaledVector(c.fwd, k.throttle * 0.66 * dt);
     c.v.y -= G * dt;
   }
 
-  const sp2 = c.v.length(); if (sp2 > S.maxBoostSpeed) c.v.multiplyScalar(S.maxBoostSpeed / sp2);
+  const sp2 = c.v.length(), cap = S.maxBoostSpeed * sm; if (sp2 > cap) c.v.multiplyScalar(cap / sp2);
   c.p.addScaledVector(c.v, dt);
   integrateQ(c.q, c.w, dt);
   updateBasis(c);
@@ -316,7 +339,7 @@ function stepPenguin(c, dt, M) {
 
 // ----------------------------------------------------------- penguin vs ball
 function hitScale(v) { if (v < 5) return 0.65; if (v < 23) return 0.65 - 0.1 * (v - 5) / 18; return 0.55 - 0.25 * Math.min(1, (v - 23) / 23); }
-const HIT = { power: 0, point: new V3(), normal: new V3() };
+const HIT = { power: 0, point: new V3(), normal: new V3(), charged: 0 };
 function collideBallCar(c, b) {
   if (c.demolished) return null;
   _qi.copy(c.q).invert();
@@ -325,6 +348,7 @@ function collideBallCar(c, b) {
   let dx = _a.x - cx, dy = _a.y - cy, dz = _a.z - cz;
   let dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
   if (dist >= BALL_R) return null;
+  HIT.charged = 0;
   if (dist < 1e-5) { dx = _a.x; dy = _a.y + 0.01; dz = _a.z; dist = Math.max(1e-5, Math.hypot(dx, dy, dz)); }
   _n.set(dx / dist, dy / dist, dz / dist).applyQuaternion(c.q);
   _c.set(cx, cy, cz).add(HB_OFF).applyQuaternion(c.q).add(c.p);
@@ -344,12 +368,17 @@ function collideBallCar(c, b) {
       const rel = Math.min(46, _a.length());
       _t.copy(b.p).sub(c.p); _t.y *= 0.35; _t.normalize();
       const f = _t.dot(c.fwd); _t.addScaledVector(c.fwd, -0.35 * f).normalize();
-      b.v.addScaledVector(_t, rel * hitScale(rel) * c.stats.kick * (c.flipT > 0 ? DIVE_KICK : 1));
+      // a wound-up charge adds power (and a flat kick so even a slow touch flies) and curves toward the steer side
+      const ch = c.charge >= CHARGE_MIN ? c.charge : 0;
+      b.v.addScaledVector(_t, rel * hitScale(rel) * c.stats.kick * (c.flipT > 0 ? DIVE_KICK : 1) * (1 + CHARGE_POWER * ch) + CHARGE_BASE * ch);
+      if (ch > 0) { b.w.y -= c.ctrl.steer * CHARGE_SPIN * ch; c.charge = 0; c.chargeCd = CHARGE_CD; HIT.charged = ch; }
       c.hitCd = 0.12;
-      power = Math.max(power, rel);
+      power = Math.max(power, rel + 12 * ch);
     }
+    // friction at the contact spins the ball: glancing hits and turning penguins put sidespin on it
     _t.copy(_a).addScaledVector(_n, -_a.dot(_n));
-    b.w.addScaledVector(_c.set(0, 0, 0).crossVectors(_n, _t), -0.4 / BALL_R);
+    b.w.addScaledVector(_c.crossVectors(_n, _t), -SPIN_HIT / BALL_R);
+    const wl = b.w.length(); if (wl > SPIN_MAX) b.w.multiplyScalar(SPIN_MAX / wl);
   }
   HIT.power = power; HIT.normal.copy(_n);
   HIT.point.copy(b.p).addScaledVector(_n, -BALL_R);
@@ -400,7 +429,8 @@ function collideCars(a, b, M) {
   M.onBump(a, b, Math.abs(rel));
 }
 
-// ----------------------------------------------------------- boost pads ("fish")
+// ----------------------------------------------------------- boost pads: 6 ice crystals (4 corners, 2 mid-rink) + small fish
+// Crystals fill the tank and give a BURST_K speed burst for BURST_T seconds, then regrow in 10 s; small fish give 12 boost.
 const BIG_PADS = [[-30.72, -40.96], [30.72, -40.96], [-35.84, 0], [35.84, 0], [-30.72, 40.96], [30.72, 40.96]];
 // 18 small pads: the classic layout with the inner ring and centre-line pads removed for a cleaner, more open field
 const SMALL_PADS = [[0, -42.4], [-17.92, -41.84], [17.92, -41.84], [-35.84, -24.84], [35.84, -24.84], [-17.88, -23], [17.88, -23],
@@ -417,10 +447,15 @@ function updatePads(M, dt) {
     if (!p.active) { p.t -= dt; if (p.t <= 0) p.active = true; continue; }
     const r = p.big ? 2.08 : 1.44;
     for (const c of M.cars) {
-      if (c.demolished || c.p.y > 2.2 || c.boost >= c.stats.boostMax - 0.01) continue;
+      // crystals are worth taking even on a full tank (the burst); fish only feed a tank with room
+      if (c.demolished || c.p.y > 2.2 || (!p.big && c.boost >= c.stats.boostMax - 0.01)) continue;
       const dx = c.p.x - p.x, dz = c.p.z - p.z;
       if (dx * dx + dz * dz < r * r) {
-        c.boost = p.big ? c.stats.boostMax : Math.min(c.stats.boostMax, c.boost + 12);
+        if (p.big) {
+          c.boost = c.stats.boostMax; c.burstT = BURST_T;
+          const fs = c.v.dot(c.fwd), room = c.stats.maxBoostSpeed * BURST_K - c.v.length();
+          if (fs > 0 && room > 0) c.v.addScaledVector(c.fwd, Math.min(fs * (BURST_K - 1), room));
+        } else c.boost = Math.min(c.stats.boostMax, c.boost + 12);
         p.active = false; p.t = p.big ? 10 : 4;
         M.onPickup(c, p);
         break;

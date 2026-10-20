@@ -209,6 +209,7 @@ const UI = (() => {
             <div><kbd>A</kbd><kbd>D</kbd> steer · turn in the air</div>
             <div><kbd>Space</kbd> or <kbd>Right click</kbd> jump · press again to double jump</div>
             <div><kbd>Shift</kbd> or <kbd>Left click</kbd> jetpack boost</div>
+            <div><kbd>F</kbd> hold to charge a power shot · steer with <kbd>A</kbd><kbd>D</kbd> as you hit it to curve it</div>
             <div><kbd>X</kbd> powerslide</div>
             <div><kbd>C</kbd> ball cam on / off</div>
             <div><kbd>Tab</kbd> scoreboard · <kbd>Esc</kbd> or <kbd>P</kbd> pause</div>
@@ -216,12 +217,15 @@ const UI = (() => {
           <div class="card"><h3>Gamepad</h3><div class="keys">
             <div><kbd>RT</kbd> / <kbd>LT</kbd> forward / reverse</div><div><kbd>Left stick</kbd> steer and aim in the air</div>
             <div><kbd>A</kbd> jump</div><div><kbd>B</kbd> boost</div><div><kbd>X</kbd> powerslide</div>
-            <div><kbd>Y</kbd> ball cam</div><div><kbd>Start</kbd> pause</div>
+            <div><kbd>RB</kbd> charge a power shot</div><div><kbd>Y</kbd> ball cam</div><div><kbd>Start</kbd> pause</div>
           </div></div>
           <div class="card"><h3>Moves</h3><ul class="tips">
             <li><b>Belly dive:</b> jump, then jump again while holding a direction for a burst of speed and a harder hit. Penguins stay upright in the air: they never roll.</li>
             <li><b>Aerial:</b> jump, tilt your nose up with S, then boost. Steer in the air to meet the ball.</li>
-            <li><b>Fish pads:</b> small fish give 12 boost and come back after 4 seconds. Big golden fish fill your tank and return after 10.</li>
+            <li><b>Ice crystals:</b> the six glowing crystals (four corners, two at midfield) fill your tank and give a 1.35× speed burst for 1.5 seconds, then regrow after 10. Small fish give 12 boost and come back after 4 seconds.</li>
+            <li><b>Charged shots:</b> hold charge as you close in. Once the meter passes the first notch your next touch hits harder, and the way you're steering at contact curves the ball. You're a little slower while charging.</li>
+            <li><b>Curve:</b> glancing hits, hits while turning and charged shots spin the ball so it bends in the air (watch for the icy ribbon). Bots read the curve with the same physics you do.</li>
+            <li><b>Team roles:</b> bot teammates and opponents play a duty: <b>Striker</b> goes for the ball, <b>Goalie</b> keeps goal, and in 5v5 a <b>Sweeper</b> covers the middle. They swap duties as the play moves, and the badge over each name shows who is doing what.</li>
             <li><b>Walls:</b> slide straight up the curved walls. Keep your speed or you'll drop off.</li>
             <li><b>Demolitions:</b> hit an opponent at supersonic speed (watch for the speed lines) to send them back to spawn for 3 seconds.</li>
             <li><b>Stuck on your back?</b> Press jump to flop back onto your belly.</li>

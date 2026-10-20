@@ -2,7 +2,7 @@
 //  CAMERA + SHOWROOM — game camera, cinematic menu camera, garage/locker showroom
 // =====================================================================
 // ----------------------------------------------------------- game camera
-const CAM = { pos: new V3(0, 25, -70), yaw: 0, pitch: -0.1, shake: 0, cineA: 0, look: new V3(), lag: 0 };
+const CAM = { pos: new V3(0, 25, -70), yaw: 0, pitch: -0.1, shake: 0, cineA: 0, look: new V3(), lag: 0, hl: null };
 const CAM_SCALE = 1.33;   // penguin is ~1.33x the size of the classic car, so the classic camera numbers scale by this
 const _cp = new V3(), _cb = new V3(), _cd = new V3(), _cn = new V3(), _cl = new V3();
 function setFov() {
@@ -14,9 +14,45 @@ function keepInside(p, margin) {
   const d = arenaD(p.x, p.y, p.z);
   if (d < margin) { arenaN(p.x, p.y, p.z, _cn); p.addScaledVector(_cn, margin - d); }
 }
+// ----------------------------------------------------------- goal highlight
+// While the goal plays out in slow motion the camera swings in behind the scorer's line, then dollies and zooms
+// toward the net so the ball, the net and the scorer share the frame.
+const GOAL_HL = { dur: 2.5, zoom: 0.7 };
+const _hb = new V3(), _hg = new V3(), _hs = new V3(), _hu = new V3(), _hv = new V3(), _hp = new V3(), _hf = new V3();
+function startHighlight(team, scorer) {
+  const b = M.ball, dir = team === 0 ? 1 : -1;   // team 0 scores in the +Z net
+  const from = b.p.clone().addScaledVector(b.v, -0.6); from.y = 1; from.x = clamp(from.x, -A.hx + 4, A.hx - 4); from.z = clamp(from.z, -A.hz + 6, A.hz - 6);
+  const sx = scorer ? scorer.p.x : from.x;
+  const look = camera.position.clone().add(camera.getWorldDirection(new V3()).multiplyScalar(10));
+  CAM.hl = { t: 0, dir, scorer, from, side: (sx >= 0 ? 1 : -1) * -dir, look };
+}
+function highlightCamera(dt, alpha) {
+  const h = CAM.hl, b = M.ball;
+  if (!M.paused) h.t += dt;
+  const d = clamp(h.t / GOAL_HL.dur, 0, 1), ed = d * d * (3 - 2 * d);
+  // focus on the goal mouth, following the ball around inside the net
+  _hb.lerpVectors(b.pp, b.p, alpha);
+  _hg.set(clamp(_hb.x, -A.gw + 1, A.gw - 1), clamp(_hb.y, 1, A.gh - 1.2), h.dir * (A.hz + 1.5));
+  const sc = h.scorer && !h.scorer.demolished ? h.scorer : null;
+  if (sc) _hs.lerpVectors(sc.pp, sc.p, alpha); else _hs.copy(h.from);
+  _hu.set(_hg.x - _hs.x, 0, _hg.z - _hs.z);
+  const ul = _hu.length(); if (ul < 5) _hu.set(0, 0, h.dir); else _hu.multiplyScalar(1 / ul);
+  _hv.set(-_hu.z, 0, _hu.x).multiplyScalar(h.side);
+  // behind and beside the scorer's line to the net, pushing in as the slow motion runs
+  _hp.copy(_hg).addScaledVector(_hu, -lerp(15, 9, ed)).addScaledVector(_hv, lerp(5.5, 3.4, ed)); _hp.y = lerp(5.2, 3.2, ed);
+  keepInside(_hp, 1.2);
+  CAM.pos.lerp(_hp, 1 - Math.exp(-dt * 4.5));
+  _hf.lerpVectors(_hs, _hg, 0.45 + 0.4 * ed); _hf.y = Math.max(1, _hf.y);
+  h.look.lerp(_hf, 1 - Math.exp(-dt * 6));
+  camera.position.copy(CAM.pos);
+  if (CAM.shake > 0) { CAM.shake = Math.max(0, CAM.shake - dt * 1.6); const s = CAM.shake * CAM.shake * 0.6; camera.position.x += rand(-s, s); camera.position.y += rand(-s, s); camera.position.z += rand(-s, s); }
+  camera.lookAt(h.look);
+  camera.fov = clamp(camera.fov * lerp(1, GOAL_HL.zoom, ed), 20, 120); camera.updateProjectionMatrix();
+}
 function updateCamera(dt, alpha) {
   setFov();
   if (CAM.override) { camera.position.copy(CAM.override.pos); camera.lookAt(CAM.override.look); return; }
+  if (CAM.hl) { highlightCamera(dt, alpha); return; }
   const b = M.ball;
   _cb.lerpVectors(b.pp, b.p, alpha);
   const pl = M.player;

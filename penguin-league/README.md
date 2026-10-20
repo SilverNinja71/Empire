@@ -15,9 +15,20 @@ Open `index.html`, or run `./start.sh` at the repo root and go to `http://localh
 | Steer, turn in the air | A / D | left stick |
 | Jump (press again with a direction to belly dive) | Space or right click | A |
 | Boost | Shift or left click | B |
+| Charged shot (hold; steer at contact to curve it) | F | RB |
 | Powerslide | X | X |
 | Ball cam | C | Y |
 | Pause | Esc or P | Start |
+
+On touch screens there are on-screen JUMP, BOOST, SLIDE and SHOT buttons.
+
+## Mechanics
+
+- **Ice crystals:** six glowing crystal pads (four corners, two at midfield) fill the tank and give a 1.35× speed burst for 1.5 s, then regrow after 10 s. Small fish pads give 12 boost.
+- **Spin and curve:** glancing hits, hits while turning and charged shots put sidespin on the ball, and a Magnus force bends it in flight (shown by an icy ribbon). Bot ball prediction uses the same physics.
+- **Charged shots:** holding charge slows you slightly; past the first notch the next touch adds power and curves toward the side you're steering.
+- **Goal highlight:** every goal plays 2.5 s of 0.35× slow motion with the camera zooming toward the net and the scorer, an air horn and confetti, then the kickoff resets.
+- **Team roles:** each team has a Goalie, a Sweeper in 5v5, and Strikers. Only the lead striker chases the ball, duties swap as play moves, and badges over bot names show who is doing what.
 
 ## Build
 

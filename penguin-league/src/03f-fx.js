@@ -102,26 +102,48 @@ outgoingLight += vec3(0.8) * smoothstep(0.95, 0.982, dot(normal, normalize(vec3(
     m.rotation.x = -Math.PI / 2; m.renderOrder = ro; scene.add(m); return m;
   };
   const blob = decal(blobTex, 1), ring = decal(ringTex, 2);
-  // speed ribbon: camera-facing strip through recent ball positions, shown above ~25 m/s
-  const TN = 30, TH = TN - 1, hist = new Float32Array(TH * 3);
-  const tP = new Float32Array(TN * 6), tT = new Float32Array(TN * 6), tS = new Float32Array(TN * 2), tUv = new Float32Array(TN * 4), tIdx = [];
-  for (let i = 0; i < TN; i++) {
-    tS[i * 2] = -1; tS[i * 2 + 1] = 1; tUv[i * 4] = tUv[i * 4 + 2] = i / (TN - 1); tUv[i * 4 + 3] = 1;
-    if (i < TN - 1) { const a = i * 2; tIdx.push(a, a + 1, a + 2, a + 1, a + 3, a + 2); }
-  }
-  const tGeo = new THREE.BufferGeometry(), tPA = new THREE.BufferAttribute(tP, 3), tTA = new THREE.BufferAttribute(tT, 3);
-  tPA.setUsage(THREE.DynamicDrawUsage); tTA.setUsage(THREE.DynamicDrawUsage);
-  tGeo.setIndex(tIdx); tGeo.setAttribute('position', tPA); tGeo.setAttribute('aTan', tTA);
-  tGeo.setAttribute('aSide', new THREE.BufferAttribute(tS, 1)); tGeo.setAttribute('uv', new THREE.BufferAttribute(tUv, 2));
-  const tMat = new THREE.ShaderMaterial({
-    uniforms: { uOp: { value: 0 }, uW: { value: 0.95 }, uA: { value: new THREE.Color(0xffffff) }, uB: { value: new THREE.Color(0xffd23f) }, uC: { value: new THREE.Color(0xff5fa8) } },
-    vertexShader: `attribute vec3 aTan; attribute float aSide; uniform float uW; varying vec2 vUv;
+  // ribbons: camera-facing strips through recent ball positions (preallocated, rebuilt in place every frame)
+  const ribbonGeo = (n) => {
+    const P = new Float32Array(n * 6), T = new Float32Array(n * 6), Sd = new Float32Array(n * 2), Uv = new Float32Array(n * 4), idx = [];
+    for (let i = 0; i < n; i++) {
+      Sd[i * 2] = -1; Sd[i * 2 + 1] = 1; Uv[i * 4] = Uv[i * 4 + 2] = i / (n - 1); Uv[i * 4 + 3] = 1;
+      if (i < n - 1) { const a = i * 2; idx.push(a, a + 1, a + 2, a + 1, a + 3, a + 2); }
+    }
+    const g = new THREE.BufferGeometry(), PA = new THREE.BufferAttribute(P, 3), TA = new THREE.BufferAttribute(T, 3);
+    PA.setUsage(THREE.DynamicDrawUsage); TA.setUsage(THREE.DynamicDrawUsage);
+    g.setIndex(idx); g.setAttribute('position', PA); g.setAttribute('aTan', TA);
+    g.setAttribute('aSide', new THREE.BufferAttribute(Sd, 1)); g.setAttribute('uv', new THREE.BufferAttribute(Uv, 2));
+    return { g, P, T, PA, TA };
+  };
+  const RIBBON_VS = `attribute vec3 aTan; attribute float aSide; uniform float uW; varying vec2 vUv;
 void main(){
   vec3 p = position, s = cross(aTan, normalize(cameraPosition - p)); float l = length(s);
   s = l > 1e-4 ? s / l : vec3(0.0, 1.0, 0.0);
   p += s * aSide * uW * pow(1.0 - uv.x, 0.6); vUv = uv;
   gl_Position = projectionMatrix * viewMatrix * vec4(p, 1.0);
-}`,
+}`;
+  // fill a ribbon from a ring-buffer history (newest sample first, the live ball position at the head)
+  const fillRibbon = (R, n, hist, head, len, p, v) => {
+    const tP = R.P, tT = R.T;
+    for (let i = 0; i < n; i++) {
+      const j = i === 0 ? -1 : (((head - i + 1) % len) + len) % len * 3, o = i * 6;
+      tP[o] = tP[o + 3] = j < 0 ? p.x : hist[j]; tP[o + 1] = tP[o + 4] = j < 0 ? p.y : hist[j + 1]; tP[o + 2] = tP[o + 5] = j < 0 ? p.z : hist[j + 2];
+    }
+    let px = v.x, py = v.y, pz = v.z;
+    for (let i = 0; i < n; i++) {
+      const a = Math.max(0, i - 1) * 6, c = Math.min(n - 1, i + 1) * 6, o = i * 6;
+      let tx = tP[a] - tP[c], ty = tP[a + 1] - tP[c + 1], tz = tP[a + 2] - tP[c + 2];
+      const l = Math.hypot(tx, ty, tz);
+      if (l > 1e-4) { tx /= l; ty /= l; tz /= l; px = tx; py = ty; pz = tz; } else { tx = px; ty = py; tz = pz; }
+      tT[o] = tT[o + 3] = tx; tT[o + 1] = tT[o + 4] = ty; tT[o + 2] = tT[o + 5] = tz;
+    }
+    R.PA.needsUpdate = R.TA.needsUpdate = true;
+  };
+  // speed ribbon: shown above ~25 m/s
+  const TN = 30, TH = TN - 1, hist = new Float32Array(TH * 3), TR = ribbonGeo(TN);
+  const tMat = new THREE.ShaderMaterial({
+    uniforms: { uOp: { value: 0 }, uW: { value: 0.95 }, uA: { value: new THREE.Color(0xffffff) }, uB: { value: new THREE.Color(0xffd23f) }, uC: { value: new THREE.Color(0xff5fa8) } },
+    vertexShader: RIBBON_VS,
     fragmentShader: `uniform float uOp; uniform vec3 uA, uB, uC; varying vec2 vUv;
 void main(){
   float x = vUv.x, y = abs(vUv.y * 2.0 - 1.0);
@@ -129,14 +151,30 @@ void main(){
   gl_FragColor = vec4(col, (1.0 - smoothstep(0.82, 1.0, y)) * pow(1.0 - x, 1.1) * uOp);` + FX_OUT,
     transparent: true, depthWrite: false, side: THREE.DoubleSide,
   });
-  const trail = new THREE.Mesh(tGeo, tMat); trail.frustumCulled = false; trail.renderOrder = 3; trail.visible = false; scene.add(trail);
+  const trail = new THREE.Mesh(TR.g, tMat); trail.frustumCulled = false; trail.renderOrder = 3; trail.visible = false; scene.add(trail);
+  // curve ribbon: a longer icy streak through the last ~0.8 s of flight while the ball carries real sidespin,
+  // so the bend of a curved shot stays visible; twisting stripes scroll with the spin
+  const CN = 48, CH = CN - 1, chist = new Float32Array(CH * 3), CR = ribbonGeo(CN);
+  const cvMat = new THREE.ShaderMaterial({
+    uniforms: { uOp: { value: 0 }, uW: { value: 0.62 }, uT: { value: 0 } },
+    vertexShader: RIBBON_VS,
+    fragmentShader: `uniform float uOp, uT; varying vec2 vUv;
+void main(){
+  float x = vUv.x, s = vUv.y * 2.0 - 1.0, y = abs(s);
+  float st = 0.5 + 0.5 * sin((x * 30.0 + s * 2.2) * 3.0 - uT);
+  vec3 col = mix(vec3(0.82, 0.98, 1.0), vec3(0.2, 0.74, 1.0), smoothstep(0.15, 0.8, y));
+  col = mix(col, vec3(1.0), st * 0.4 * (1.0 - y));
+  gl_FragColor = vec4(col * 1.3, (1.0 - smoothstep(0.7, 1.0, y)) * pow(1.0 - x, 0.85) * uOp * (0.72 + 0.28 * st));` + FX_OUT,
+    transparent: true, depthWrite: false, side: THREE.DoubleSide,
+  });
+  const curve = new THREE.Mesh(CR.g, cvMat); curve.frustumCulled = false; curve.renderOrder = 3; curve.visible = false; scene.add(curve);
   const rot = new Q(), vPrev = new V3(), lastP = new V3(), sqAx = new V3(0, 1, 0);
-  let hi = 0, tAcc = 0, tOp = 0, fresh = true, sqA = 0, sqV = 0, warmB = 2;
+  let hi = 0, tAcc = 0, tOp = 0, fresh = true, sqA = 0, sqV = 0, warmB = 2, ci = 0, cAcc = 0, cOp = 0, warmC = 2;
   return {
     mesh,
     update(dt, alpha, b, hidden) {
       mesh.visible = blob.visible = ring.visible = !hidden;
-      if (hidden) { trail.visible = false; fresh = true; return; }
+      if (hidden) { trail.visible = curve.visible = false; fresh = true; cOp = 0; return; }
       const want = fxHi() ? matHi : matLo; if (body.material !== want) body.material = want;
       const p = mesh.position; p.lerpVectors(b.pp, b.p, alpha);
       const wl = b.w.length();
@@ -156,27 +194,26 @@ void main(){
       blob.position.set(p.x, 0.035, p.z); blob.scale.setScalar(BALL_R * (2.4 + hgt * 0.06)); blob.material.opacity = 0.62 * k * k;
       ring.position.set(p.x, 0.05, p.z); ring.scale.setScalar(BALL_R * (2.6 + hgt * 0.06)); ring.rotation.z += dt * 0.8;
       ring.material.opacity = (0.3 + 0.6 * fxStep(0.3, 3, hgt)) * Math.max(k, 0.45);
-      // ribbon history (time-sampled, reset on teleports)
-      if (jump) for (let i = 0; i < TH; i++) { hist[i * 3] = p.x; hist[i * 3 + 1] = p.y; hist[i * 3 + 2] = p.z; }
+      // ribbon histories (time-sampled, reset on teleports)
+      if (jump) {
+        for (let i = 0; i < TH; i++) { hist[i * 3] = p.x; hist[i * 3 + 1] = p.y; hist[i * 3 + 2] = p.z; }
+        for (let i = 0; i < CH; i++) { chist[i * 3] = p.x; chist[i * 3 + 1] = p.y; chist[i * 3 + 2] = p.z; }
+      }
       lastP.copy(p); fresh = false;
       tAcc += dt;
       if (tAcc >= 1 / 90) { tAcc = Math.min(tAcc - 1 / 90, 1 / 90); hi = (hi + 1) % TH; hist[hi * 3] = p.x; hist[hi * 3 + 1] = p.y; hist[hi * 3 + 2] = p.z; }
+      cAcc += dt;
+      if (cAcc >= 1 / 60) { cAcc = Math.min(cAcc - 1 / 60, 1 / 60); ci = (ci + 1) % CH; chist[ci * 3] = p.x; chist[ci * 3 + 1] = p.y; chist[ci * 3 + 2] = p.z; }
+      // curve ribbon: fades in once the sidespin passes CURVE_SPIN, lingers a moment after it drops
+      const spin = Math.abs(b.w.y);
+      cOp = damp(cOp, fxStep(CURVE_SPIN, CURVE_SPIN * 2.2, spin) * fxStep(6, 12, b.v.length()), cOp < 0.05 ? 14 : 5, dt);
+      curve.visible = cOp > 0.01;
+      if (curve.visible) { fillRibbon(CR, CN, chist, ci, CH, p, b.v); cvMat.uniforms.uOp.value = cOp * 0.85; cvMat.uniforms.uT.value += dt * (4 + spin * 2.2); }
+      else if (warmC > 0) { warmC--; curve.visible = true; cvMat.uniforms.uOp.value = 0; }
       tOp = damp(tOp, fxStep(24, 38, b.v.length()), 10, dt);
       trail.visible = tOp > 0.01;
       if (!trail.visible) { if (warmB > 0) { warmB--; trail.visible = true; tMat.uniforms.uOp.value = 0; } return; }
-      for (let i = 0; i < TN; i++) {
-        const j = i === 0 ? -1 : (((hi - i + 1) % TH) + TH) % TH * 3, o = i * 6;
-        tP[o] = tP[o + 3] = j < 0 ? p.x : hist[j]; tP[o + 1] = tP[o + 4] = j < 0 ? p.y : hist[j + 1]; tP[o + 2] = tP[o + 5] = j < 0 ? p.z : hist[j + 2];
-      }
-      let px = b.v.x, py = b.v.y, pz = b.v.z;
-      for (let i = 0; i < TN; i++) {
-        const a = Math.max(0, i - 1) * 6, c = Math.min(TN - 1, i + 1) * 6, o = i * 6;
-        let tx = tP[a] - tP[c], ty = tP[a + 1] - tP[c + 1], tz = tP[a + 2] - tP[c + 2];
-        const l = Math.hypot(tx, ty, tz);
-        if (l > 1e-4) { tx /= l; ty /= l; tz /= l; px = tx; py = ty; pz = tz; } else { tx = px; ty = py; tz = pz; }
-        tT[o] = tT[o + 3] = tx; tT[o + 1] = tT[o + 4] = ty; tT[o + 2] = tT[o + 5] = tz;
-      }
-      tPA.needsUpdate = tTA.needsUpdate = true; tMat.uniforms.uOp.value = tOp * 0.9;
+      fillRibbon(TR, TN, hist, hi, TH, p, b.v); tMat.uniforms.uOp.value = tOp * 0.9;
     },
   };
 })();
@@ -400,6 +437,7 @@ void main(){
   if (document.fonts) document.fonts.load('80px "Lilita One"').then(() => {
     for (const w of ['POW!', 'BONK!', 'WHAM!', 'SMACK!']) comicTex(w, '#ffd23f', '#ff5fa8');
     comicTex('SAVE!', '#72dc4e', '#ffffff'); comicTex('GOAL!', '#7fd0ff', '#ffd23f'); comicTex('GOAL!', '#ffb15c', '#ffd23f');
+    comicTex('POWER!', '#c8f6ff', '#2fb8ff'); comicTex('CURVE!', '#c8f6ff', '#8d5bff');
     for (const c of TEAM_CSS) comicTex('POOF!', '#ffffff', c);
     if (renderer.initTexture) for (const k in texCache) renderer.initTexture(texCache[k].t);
   }).catch(() => {});

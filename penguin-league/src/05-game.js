@@ -5,7 +5,7 @@ const M = {
   cars: [], views: [], ball: new Ball(), pads: [], score: [0, 0], clock: 300, t: 0, state: 'idle', stateT: 0,
   demo: false, mode: '1v1', cfg: null, player: null, kickoff: false, kickStart: 0, kickTaker: [null, null], coach: [null, null],
   preds: {}, hist: [], histI: 0, overtime: false, otTime: 0, clockRun: false, ballHidden: false, touchSerial: 0, lastTouch: null,
-  touches: [], tick: 0, slowmo: 0, zeroWait: false, teamLevel: ['normal', 'normal'], paused: false, excite: 0, levels: [], lastCount: 0,
+  touches: [], tick: 0, slowmo: 0, zeroWait: false, teamLevel: ['normal', 'normal'], paused: false, excite: 0, levels: [], lastCount: 0, dutyT: [-99, -99],
   respawn(c) {
     const [x, z] = pick(RESPAWN);
     const px = (c.team === 0 ? x : -x) * A.s, pz = (c.team === 0 ? z : -z) * A.s;
@@ -23,12 +23,18 @@ const M = {
     if (nearPlayer(v.p, 40)) { Sfx.demo(); CAM.shake = Math.max(CAM.shake, v === M.player || a === M.player ? 0.9 : 0.4); }
     if (v === M.player) banner('DEMOLISHED', 'Respawning…', 'pink', 1.6);
   },
-  onPickup(c, p) { if (c === M.player) Sfx.pickup(p.big); puffBurst(_gv.set(p.x, 0.5, p.z), p.big ? 10 : 4, 0xffe066, 3, 0.25); },
+  onPickup(c, p) {
+    if (!p.big) { if (c === M.player) Sfx.pickup(false); puffBurst(_gv.set(p.x, 0.5, p.z), 4, 0xffe066, 3, 0.25); return; }
+    // ice crystal: shatter into icy glints + a frost ring; the speed burst itself is physics
+    if (c === M.player) { Sfx.crystal(); CAM.shake = Math.max(CAM.shake, 0.25); }
+    puffBurst(_gv.set(p.x, 1.2, p.z), 10, 0xc8f6ff, 4.5, 0.32);
+    FX.shock(_gv.set(p.x, 0.35, p.z), 0x5fdcff, 4.5);
+  },
   onBump(a, b, s) { if ((a === M.player || b === M.player) && s > 4) Sfx.bounce(s); },
 };
 for (const k of LEVEL_ORDER) M.preds[k] = makePred();
-for (let i = 0; i < 90; i++) M.hist.push({ p: new V3(), v: new V3() });
-const _gv = new V3(), _preP = new V3(), _preV = new V3();
+for (let i = 0; i < 90; i++) M.hist.push({ p: new V3(), v: new V3(), w: new V3() });
+const _gv = new V3(), _preP = new V3(), _preV = new V3(), _preW = new V3();
 const tn = (c) => `<span class="${c.team ? 'o' : 'b'}">${esc(c.name)}</span>`;
 const nearPlayer = (p, d) => !M.player || M.player.p.distanceTo(p) < d;
 
@@ -84,9 +90,17 @@ function startMatch(cfg) {
   kickoffReset();
   HUD.reset();
 }
+// goal highlight: slow motion + camera zoom (03g-camera) + letterbox bars, ended before the next phase
+const GOAL_TS = 0.35;
+function cine(on) { $('#cine').classList.toggle('on', on); }
+function endHighlight() { CAM.hl = null; cine(false); }
 function kickoffReset() {
+  endHighlight();
+  // fresh team shape every kickoff: the coach re-deals striker / goalie / sweeper duties from the new spots
+  for (const c of M.cars) c.duty = null;
+  M.dutyT[0] = M.dutyT[1] = -99;
   const b = M.ball; b.reset(); M.ballHidden = false;
-  for (const h of M.hist) { h.p.copy(b.p); h.v.set(0, 0, 0); }
+  for (const h of M.hist) { h.p.copy(b.p); h.v.set(0, 0, 0); h.w.set(0, 0, 0); }
   for (const p of M.pads) { p.active = true; p.t = 0; }
   const n = MODES[M.mode].n;
   const idxs = n === 5 ? shuffle([0, 1, 2, 3, 4]) : shuffle([0, 1, 2, 3, 4]).slice(0, n);
@@ -114,7 +128,7 @@ function updatePreds() {
     const L = LEVELS[key];
     const back = Math.min(M.hist.length - 1, Math.round(L.react / DT));
     const h = M.hist[(M.histI - back + M.hist.length * 4) % M.hist.length];
-    computePred(M.preds[key], h.p, h.v, M.t - back * DT, L.horizon + 0.7);
+    computePred(M.preds[key], h.p, h.v, h.w, M.t - back * DT, L.horizon + 0.7);
   }
 }
 
@@ -139,7 +153,7 @@ function simTick() {
   if (M.state === 'over') { for (const c of M.cars) { c.pp.copy(c.p); c.pq.copy(c.q); } b.pp.copy(b.p); return; }
   // perception history + predictions
   M.histI = (M.histI + 1) % M.hist.length;
-  M.hist[M.histI].p.copy(b.p); M.hist[M.histI].v.copy(b.v);
+  M.hist[M.histI].p.copy(b.p); M.hist[M.histI].v.copy(b.v); M.hist[M.histI].w.copy(b.w);
   if (M.tick % 3 === 0) updatePreds();
   if (M.tick % 12 === 0) coachUpdate(M);
   if (M.kickoff && M.t - M.kickStart > 4.5) M.kickoff = false;
@@ -156,9 +170,9 @@ function simTick() {
   for (let i = 0; i < M.cars.length; i++) for (let j = i + 1; j < M.cars.length; j++) collideCars(M.cars[i], M.cars[j], M);
   if (!M.ballHidden) {
     for (const c of M.cars) {
-      _preP.copy(b.p); _preV.copy(b.v);
+      _preP.copy(b.p); _preV.copy(b.v); _preW.copy(b.w);
       const hit = collideBallCar(c, b);
-      if (hit) onTouch(c, hit);
+      if (hit && M.state === 'play') onTouch(c, hit);   // the ball stays physical in the net during a goal highlight, but those touches don't count
     }
   }
   updatePads(M, DT);
@@ -181,6 +195,7 @@ function simTick() {
   } else if (M.state === 'goal' || M.state === 'otintro') {
     M.stateT -= DT;
     if (M.stateT <= 0) {
+      if (M.state === 'goal') { M.ballHidden = true; endHighlight(); }   // highlight over: the ball pops away before the next phase
       if (M.state === 'goal' && (M.overtime || (M.clock <= 0 && M.score[0] !== M.score[1]))) endMatch();
       else if (M.state === 'goal' && M.clock <= 0) startOvertime();
       else kickoffReset();
@@ -204,15 +219,23 @@ function onTouch(c, hit) {
     if (M_.kickoff) { M_.kickoff = false; M_.clockRun = true; }
     if (!M_.demo && M_.state === 'play') {
       const own = c.team === 0 ? -1 : 1;
-      const before = predictGoal(_preP, _preV, 2.6);
-      const after = predictGoal(M_.ball.p, M_.ball.v, 4);
+      const before = predictGoal(_preP, _preV, 2.6, _preW);
+      const after = predictGoal(M_.ball.p, M_.ball.v, 4, M_.ball.w);
       if (before === own && after !== own) { c.stat.saves++; addScore(c, 50, 'SAVE'); feed(`${tn(c)} made a save`); FX.burst('SAVE!', _gv.copy(M_.ball.p).add(UP), 3.6, '#72dc4e', '#ffffff'); }
       else if (after === -own && before !== -own) { c.stat.shots++; addScore(c, 20, 'SHOT ON GOAL'); }
     }
   }
   c.lastTouchT = M_.t;
   if (hit.power > 2.5 && nearPlayer(hit.point, 50)) Sfx.hit(hit.power);
-  if (hit.power > 17) {
+  if (hit.charged > 0) {
+    // charged shot: frost ring + a POWER! or CURVE! sticker (curve when the shooter was steering at contact)
+    const curved = Math.abs(c.ctrl.steer) > 0.3;
+    FX.shock(_gv.copy(hit.point), 0x5fdcff, 5 + hit.charged * 5);
+    FX.burst(curved ? 'CURVE!' : 'POWER!', _gv.copy(hit.point).addScaledVector(UP, 1.1), 2.6 + hit.charged * 1.2, '#c8f6ff', curved ? '#8d5bff' : '#2fb8ff');
+    puffBurst(hit.point, 8, 0xc8f6ff, 6, 0.32);
+    if (nearPlayer(hit.point, 50)) Sfx.power(hit.charged);
+    if (c === M_.player) CAM.shake = Math.max(CAM.shake, 0.5);
+  } else if (hit.power > 17) {
     FX.burst(pick(['POW!', 'BONK!', 'WHAM!', 'SMACK!']), _gv.copy(hit.point).addScaledVector(UP, 0.8), 2.4 + hit.power * 0.04);
     puffBurst(hit.point, 6, 0xffffff, 5, 0.3);
     if (c === M_.player) CAM.shake = Math.max(CAM.shake, 0.35);
@@ -241,11 +264,16 @@ function onGoal(team) {
     const d = c.p.distanceTo(b.p);
     if (d < 16) { _gv.copy(c.p).sub(b.p).normalize(); c.v.addScaledVector(_gv, (16 - d) * 1.5); c.v.y += (16 - d) * 0.55; c.jumpGrace = 0.2; }
   }
-  M.ballHidden = true; M.state = 'goal'; M.stateT = M.demo ? 1.5 : 3.2; M.excite = 1;
-  if (!M.demo) {
-    M.slowmo = 0.8; CAM.shake = 1; flash();
+  M.state = 'goal'; M.excite = 1;
+  if (M.demo) { M.ballHidden = true; M.stateT = 1.5; }
+  else {
+    // slow-motion highlight: GOAL_HL.dur real seconds at GOAL_TS speed with the ball still rippling the net
+    // while the camera zooms toward it and the scorer, then a short beat and the kickoff reset
+    M.stateT = GOAL_HL.dur * GOAL_TS + 0.45;
+    M.slowmo = GOAL_HL.dur; CAM.shake = 1; flash();
+    startHighlight(team, scorer); cine(true);
     Sfx.goal();
-    const who = scorer ? `${esc(scorer.name)} scores!` : 'Own goal!';
+    const who = scorer === M.player ? 'You scored!' : scorer ? `${esc(scorer.name)} scores!` : 'Own goal!';
     banner('GOAL!', who + (assist ? ` · assist ${esc(assist.name)}` : ''), team ? 'orange' : 'blue', 1.7);
     feed(scorer ? `${tn(scorer)} scored${assist ? ` (assist ${tn(assist)})` : ''}` : `Own goal for <span class="${team ? 'o' : 'b'}">${TEAM_LABEL[team]}</span>`);
     HUD.bumpScore(team);
@@ -257,6 +285,7 @@ function startOvertime() {
   banner('OVERTIME', 'Next goal wins', 'pink', 2.2); Sfx.whistle();
 }
 function endMatch() {
+  endHighlight();
   M.state = 'over'; M.ballHidden = M.ballHidden || false;
   Sfx.whistle();
   const win = M.score[0] > M.score[1];
@@ -268,7 +297,7 @@ function endMatch() {
 // ----------------------------------------------------------- input
 const KEYS = new Set();
 const mouse = { l: false, r: false };
-const touch = { jx: 0, jy: 0, jump: false, boost: false, slide: false };
+const touch = { jx: 0, jy: 0, jump: false, boost: false, slide: false, charge: false };
 const inMatch = () => M.state !== 'idle' && !M.demo;
 const BLOCK = new Set(['Space', 'Tab', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight']);
 addEventListener('keydown', (e) => {
@@ -299,21 +328,21 @@ function readPlayerInput(c) {
   let st = (K('KeyD') || K('ArrowRight') ? 1 : 0) - (K('KeyA') || K('ArrowLeft') ? 1 : 0);
   const roll = 0;   // rolling is not possible
   let pitch = thr;
-  let jump = K('Space') || mouse.r, boost = K('ShiftLeft') || K('ShiftRight') || mouse.l, slide = K('KeyX');
+  let jump = K('Space') || mouse.r, boost = K('ShiftLeft') || K('ShiftRight') || mouse.l, slide = K('KeyX'), charge = K('KeyF');
   const gp = readPad();
   if (gp) {
     const ax = gp.axes, bt = gp.buttons, val = (i) => (bt[i] ? (typeof bt[i] === 'object' ? bt[i].value : bt[i]) : 0), on = (i) => !!(bt[i] && bt[i].pressed);
     st += dz(ax[0] || 0); pitch += -dz(ax[1] || 0);
     thr += val(7) - val(6);
-    jump = jump || on(0); boost = boost || on(1); slide = slide || on(2);
+    jump = jump || on(0); boost = boost || on(1); slide = slide || on(2); charge = charge || on(5);
     if (on(3) && !padPrev[3]) toggleBallCam();
     if (on(9) && !padPrev[9] && M.state !== 'over') UI.togglePause();
     padPrev = { 3: on(3), 9: on(9) };
   }
   if (touch.jx || touch.jy) { st += touch.jx; thr += clamp(-touch.jy * 1.5, -1, 1); pitch += -touch.jy; }
-  jump = jump || touch.jump; boost = boost || touch.boost; slide = slide || touch.slide;
+  jump = jump || touch.jump; boost = boost || touch.boost; slide = slide || touch.slide; charge = charge || touch.charge;
   k.throttle = clamp(thr, -1, 1); k.steer = clamp(st, -1, 1); k.pitch = clamp(pitch, -1, 1); k.roll = clamp(roll, -1, 1);
-  k.jump = jump; k.boost = boost; k.slide = slide;
+  k.jump = jump; k.boost = boost; k.slide = slide; k.charge = charge;
 }
 function toggleBallCam() { save.settings.ballCam = !save.settings.ballCam; persist(); HUD.camChip(); }
 // touch controls
@@ -329,7 +358,7 @@ function toggleBallCam() { save.settings.ballCam = !save.settings.ballCam; persi
   joy.addEventListener('pointermove', move);
   const up = (e) => { if (e.pointerId !== jid) return; jid = null; touch.jx = touch.jy = 0; knob.style.transform = ''; };
   joy.addEventListener('pointerup', up); joy.addEventListener('pointercancel', up);
-  for (const [id, key] of [['t-jump', 'jump'], ['t-boost', 'boost'], ['t-slide', 'slide']]) {
+  for (const [id, key] of [['t-jump', 'jump'], ['t-boost', 'boost'], ['t-slide', 'slide'], ['t-shot', 'charge']]) {
     const el = $('#' + id);
     el.addEventListener('pointerdown', (e) => { touch[key] = true; el.classList.add('on'); el.setPointerCapture(e.pointerId); e.preventDefault(); });
     const off = () => { touch[key] = false; el.classList.remove('on'); };
@@ -342,8 +371,9 @@ function toggleBallCam() { save.settings.ballCam = !save.settings.ballCam; persi
 const HUD = (() => {
   const el = $('#hud'), s0 = $('#sb-s0'), s1 = $('#sb-s1'), time = $('#sb-time'), ot = $('#sb-ot');
   const arc = $('#boost-arc'), num = $('#boost-num'), arrow = $('#ball-arrow'), chip = $('#chip-ballcam'), speed = $('#speedlines'), hint = $('#hint'), sb = $('#scoreboard');
+  const boostBox = $('#boost'), boostLbl = $('#boost .num small'), chargeEl = $('#charge'), chargeFill = $('#charge i');
   const ARC = 2 * Math.PI * 43 * 0.75;
-  let hintT = 0, lastBoost = -1, lastClock = '';
+  let hintT = 0, lastBoost = -1, lastClock = '', lastCharge = -1, lastBurst = null, chargeFull = false;
   chip.addEventListener('click', () => { toggleBallCam(); chip.blur(); });
   $('#btn-pause').addEventListener('click', () => UI.togglePause());
   const _pv = new V3();
@@ -352,7 +382,7 @@ const HUD = (() => {
       $('#feed').innerHTML = ''; $('#toasts').innerHTML = ''; $('#banner').innerHTML = '';
       hintT = save.settings.hints ? 14 : 0; hint.style.opacity = hintT > 0 ? 1 : 0; hint.hidden = hintT <= 0;
       $('#touch').hidden = !document.body.classList.contains('touch');
-      this.camChip(); lastBoost = -1; lastClock = '';
+      this.camChip(); lastBoost = -1; lastClock = ''; lastCharge = -1; lastBurst = null; chargeFull = false;
       s0.textContent = '0'; s1.textContent = '0';
     },
     camChip() { chip.setAttribute('aria-pressed', save.settings.ballCam ? 'true' : 'false'); chip.textContent = `BALL CAM ${save.settings.ballCam ? 'ON' : 'OFF'} · C`; },
@@ -374,6 +404,16 @@ const HUD = (() => {
         arc.setAttribute('stroke', p.boost > 70 ? '#ff8a1f' : p.boost > 30 ? '#ffd23f' : '#ff5fa8');
       }
       speed.style.opacity = p.supersonic && !p.demolished ? 1 : 0;
+      // charged-shot meter (ready once it passes CHARGE_MIN) and the crystal speed-burst glow on the boost dial
+      const cq = Math.round(p.charge * 50);
+      if (cq !== lastCharge) {
+        lastCharge = cq; chargeFill.style.transform = `scaleX(${(cq / 50).toFixed(2)})`;
+        chargeEl.classList.toggle('on', cq > 0); chargeEl.classList.toggle('ready', p.charge >= CHARGE_MIN); chargeEl.classList.toggle('full', cq >= 50);
+      }
+      if (cq >= 50 && !chargeFull) Sfx.chargeReady();
+      chargeFull = cq >= 50;
+      const burst = p.burstT > 0;
+      if (burst !== lastBurst) { lastBurst = burst; boostBox.classList.toggle('burst', burst); boostLbl.textContent = burst ? 'BURST' : 'BOOST'; }
       if (hintT > 0) { hintT -= dt; if (hintT <= 0) { hint.style.opacity = 0; setTimeout(() => { hint.hidden = true; }, 700); } }
       // off-screen ball arrow
       if (!M.ballHidden) {
@@ -430,13 +470,13 @@ function tick(dt) {
   const running = M.state !== 'idle' && !M.paused;
   if (running) {
     let ts = 1;
-    if (M.slowmo > 0) { M.slowmo -= dt; ts = 0.32; }
+    if (M.slowmo > 0) { M.slowmo -= dt; ts = GOAL_TS; }
     acc += dt * ts;
     let n = 0; while (acc >= DT && n < 12) { simTick(); acc -= DT; n++; }
     if (n >= 12) acc = 0;
   }
   const alpha = clamp(acc / DT, 0, 1);
-  const fdt = running ? dt * (M.slowmo > 0 ? 0.35 : 1) : 0;
+  const fdt = running ? dt * (M.slowmo > 0 ? GOAL_TS : 1) : 0;
   for (const v of M.views) v.update(fdt, alpha, M.ball.p, !M.demo && v.car !== M.player);
   ballView.update(fdt, alpha, M.ball, M.ballHidden);
   FX.update(fdt); updatePadViews(fdt);
