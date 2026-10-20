@@ -445,7 +445,7 @@ FRAME_HOOKS.push((dt, rdt) => {
     const near = sc.box.distanceToPoint(camera.position) < 30;
     if (near !== sc.near) { sc.near = near; for (const m of sc.hi) m.visible = near; for (const m of sc.lo) m.visible = !near; }
   }
-  if (M.ball) crowdX.uBall.value.lerp(M.ball.p, 1 - Math.exp(-4 * Math.min(0.1, rdt || 0.016)));
+  if (M.ball) crowdX.uBall.value.lerp(ballView.mesh.position, 1 - Math.exp(-4 * Math.min(0.1, rdt || 0.016)));   // the interpolated ball
   const s0 = M.score[0], s1 = M.score[1];
   if (s0 > L.s0) crowdX.uCheer.value.set(1, 0.15); else if (s1 > L.s1) crowdX.uCheer.value.set(0.15, 1);
   L.s0 = s0; L.s1 = s1;

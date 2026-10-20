@@ -2,13 +2,35 @@
 //  CAMERA + SHOWROOM — game camera, cinematic menu camera, garage/locker showroom
 // =====================================================================
 // ----------------------------------------------------------- game camera
-const CAM = { pos: new V3(0, 25, -70), yaw: 0, pitch: -0.1, shake: 0, cineA: 0, look: new V3(), lag: 0, hl: null };
-const CAM_SCALE = 1.33;   // penguin is ~1.33x the size of the classic car, so the classic camera numbers scale by this
+const CAM = { pos: new V3(0, 25, -70), yaw: 0, pitch: -0.1, pitchV: 0, shake: 0, shakeT: 0, back: 1, cineA: 0, look: new V3(), lag: 0, hl: null };
+// Everything that moves is SPEED_K (1.15x) bigger and faster than in Rocket League, so scaling RL's camera numbers
+// by the same factor gives exactly RL's on-screen speed (speed / camera distance). The old 1.33 sat ~13% too far back.
+const CAM_SCALE = SPEED_K;
+// how quickly the camera turns after the penguin: car cam is near-rigid (~25 ms), ball cam swivels at ~70 ms,
+// position smoothing just hides physics jitter, pitch follows the ball on a fast critically damped spring
+const CAM_YAW_RATE = 40, CAM_BALL_YAW_RATE = 14, CAM_POS_RATE = 40, CAM_PITCH_W = 16;
+const MAX_VFOV = 90;   // portrait screens: never stretch the vertical FOV past this (pull the camera back instead)
 const _cp = new V3(), _cb = new V3(), _cd = new V3(), _cn = new V3(), _cl = new V3();
 function setFov() {
+  // the setting is the horizontal FOV, like Rocket League; on tall screens the vertical FOV is capped and the
+  // camera backs off a little to keep the same amount of field in view (no fisheye)
   const hf = save.settings.fov * Math.PI / 180;
-  let vf = 2 * Math.atan(Math.tan(hf / 2) / Math.max(0.5, camera.aspect)) * 180 / Math.PI;
-  camera.fov = clamp(vf, 40, 120); camera.updateProjectionMatrix();   // keeps the horizontal FOV like Rocket League
+  const vf = 2 * Math.atan(Math.tan(hf / 2) / Math.max(0.3, camera.aspect)) * 180 / Math.PI;
+  const cap = Math.min(vf, MAX_VFOV);
+  CAM.back = clamp(Math.tan(vf * Math.PI / 360) / Math.tan(cap * Math.PI / 360), 1, 1.6);
+  camera.fov = Math.max(40, cap); camera.updateProjectionMatrix();
+}
+// camera shake: smooth noise (a few sines) with decaying amplitude, scaled by the Camera shake setting;
+// none at all under Reduced motion
+const shakeAmt = () => (save.settings.reducedMotion ? 0 : save.settings.camShake * 2);
+function applyShake(dt) {
+  if (CAM.shake <= 0) return;
+  CAM.shake = Math.max(0, CAM.shake - dt * 1.6); CAM.shakeT += dt;
+  const s = CAM.shake * CAM.shake * 0.35 * shakeAmt(), t = CAM.shakeT;
+  if (s <= 0) return;
+  camera.position.x += s * (Math.sin(t * 37.1) + Math.sin(t * 23.3 + 1.7)) * 0.5;
+  camera.position.y += s * (Math.sin(t * 41.7 + 0.6) + Math.sin(t * 19.9 + 2.9)) * 0.5;
+  camera.position.z += s * (Math.sin(t * 31.3 + 2.2) + Math.sin(t * 27.1 + 0.4)) * 0.5;
 }
 function keepInside(p, margin) {
   const d = arenaD(p.x, p.y, p.z);
@@ -45,7 +67,7 @@ function highlightCamera(dt, alpha) {
   _hf.lerpVectors(_hs, _hg, 0.45 + 0.4 * ed); _hf.y = Math.max(1, _hf.y);
   h.look.lerp(_hf, 1 - Math.exp(-dt * 6));
   camera.position.copy(CAM.pos);
-  if (CAM.shake > 0) { CAM.shake = Math.max(0, CAM.shake - dt * 1.6); const s = CAM.shake * CAM.shake * 0.6; camera.position.x += rand(-s, s); camera.position.y += rand(-s, s); camera.position.z += rand(-s, s); }
+  applyShake(dt);
   camera.lookAt(h.look);
   camera.fov = clamp(camera.fov * lerp(1, GOAL_HL.zoom, ed), 20, 120); camera.updateProjectionMatrix();
 }
@@ -71,29 +93,31 @@ function updateCamera(dt, alpha) {
   let tx, tz;
   if (ballCam) { tx = _cb.x - _cp.x; tz = _cb.z - _cp.z; }
   else {
-    const hv = Math.hypot(pl.v.x, pl.v.z);
-    if (pl.onGround && hv > 3 && pl.v.dot(pl.fwd) > 0) { tx = pl.v.x; tz = pl.v.z; }
-    else { tx = pl.fwd.x; tz = pl.fwd.z; if (Math.hypot(tx, tz) < 0.3) { tx = pl.v.x; tz = pl.v.z; } }
+    // car cam follows where the penguin faces (not where it's sliding), so powerslides don't swing the view
+    tx = pl.fwd.x; tz = pl.fwd.z;
+    if (Math.hypot(tx, tz) < 0.3) { tx = pl.v.x; tz = pl.v.z; }
   }
-  if (Math.hypot(tx, tz) > 0.05) CAM.yaw = lerpAngle(CAM.yaw, Math.atan2(tx, tz), 1 - Math.exp(-dt * (ballCam ? 10 : 7)));
+  if (Math.hypot(tx, tz) > 0.05) CAM.yaw = lerpAngle(CAM.yaw, Math.atan2(tx, tz), 1 - Math.exp(-dt * (ballCam ? CAM_BALL_YAW_RATE : CAM_YAW_RATE)));
   // Rocket League pro camera (distance 270, height 100, angle -3°, stiffness 0.45) scaled to the penguin;
   // like RL, a soft camera lets the penguin pull ahead a little at speed
   CAM.lag = damp(CAM.lag, (1 - 0.45) * 0.45 * clamp(Math.max(0, pl.v.dot(pl.fwd)) / VMAX, 0, 1), 3, dt);
-  const dist = 2.7 * CAM_SCALE * save.settings.camDist * (1 + CAM.lag), height = 1.0 * CAM_SCALE * (0.6 + 0.4 * save.settings.camDist);
+  const dist = 2.7 * CAM_SCALE * save.settings.camDist * (1 + CAM.lag) * CAM.back, height = 1.0 * CAM_SCALE * (0.6 + 0.4 * save.settings.camDist) * CAM.back;
   const sx = Math.sin(CAM.yaw), sz = Math.cos(CAM.yaw);
   _cd.set(_cp.x - sx * dist, _cp.y + height, _cp.z - sz * dist);
   keepInside(_cd, 0.7);
   if (pl.demolished) _cd.copy(CAM.pos);
-  CAM.pos.lerp(_cd, 1 - Math.exp(-dt * 22));
+  CAM.pos.lerp(_cd, 1 - Math.exp(-dt * CAM_POS_RATE));
   let pitchT = -0.052;   // camera angle -3°
   if (ballCam) {
     const dx = _cb.x - CAM.pos.x, dz = _cb.z - CAM.pos.z, dy = _cb.y - (CAM.pos.y - 0.6);
     pitchT = clamp(Math.atan2(dy, Math.hypot(dx, dz)), -0.4, 0.62) - 0.06;
   }
-  CAM.pitch = damp(CAM.pitch, pitchT, 7, dt);
+  // exact critically damped spring step (stable for any dt)
+  const y0 = CAM.pitch - pitchT, e = Math.exp(-CAM_PITCH_W * dt), k = (CAM.pitchV + CAM_PITCH_W * y0) * dt;
+  CAM.pitch = pitchT + (y0 + k) * e; CAM.pitchV = (CAM.pitchV - CAM_PITCH_W * k) * e;
   _cl.set(CAM.pos.x + sx * Math.cos(CAM.pitch) * 10, CAM.pos.y + Math.sin(CAM.pitch) * 10, CAM.pos.z + sz * Math.cos(CAM.pitch) * 10);
   camera.position.copy(CAM.pos);
-  if (CAM.shake > 0) { CAM.shake = Math.max(0, CAM.shake - dt * 1.6); const s = CAM.shake * CAM.shake * 0.6; camera.position.x += rand(-s, s); camera.position.y += rand(-s, s); camera.position.z += rand(-s, s); }
+  applyShake(dt);
   camera.lookAt(_cl);
 }
 

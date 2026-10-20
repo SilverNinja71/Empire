@@ -120,7 +120,8 @@ function statsFromUpgrades(u) {
 // ----------------------------------------------------------- penguin body
 const RIDE_H = 0.32;
 const DIVE_T = 0.4, DIVE_DIP = 1.75;   // belly dive length (s) and dip rate (rad/s): ~20° dip, then level again
-const DIVE_KICK = 1.3;                 // extra hit power while diving (replaces the old flip's spin power)
+const DIVE_KICK = 1.3;
+const JUMP_BUFFER = 0.1;               // s: a jump pressed this long before it's allowed (landing, self-righting) fires on the first legal tick                 // extra hit power while diving (replaces the old flip's spin power)
 // stabilised air control limits: nose down (W), nose up (S, for aerials), turn rate, easing rate.
 // There is no roll: penguins always stay level side to side.
 const AIR_NOSE_DOWN = 0.6, AIR_NOSE_UP = 1.35, AIR_YAW_RATE = 3.7, AIR_LEVEL_RATE = 6;
@@ -148,7 +149,7 @@ class Penguin {
     this.v.set(0, 0, 0); this.w.set(0, 0, 0);
     this.boost = 33.3; this.onGround = true; this.airT = 0; this.jumped = false; this.doubleJumped = false;
     this.jumping = false; this.jumpT = 0; this.jumpGrace = 0; this.flipT = 0; this.rightT = 0; this.turtleT = 0;
-    this.prevJump = false; this.hitCd = 0; this.supersonic = false; this.boosting = false; this.touchingBad = false;
+    this.prevJump = false; this.jumpBuf = 0; this.hitCd = 0; this.supersonic = false; this.boosting = false; this.touchingBad = false;
     this.demolished = false; this.respawnT = 0; this.landImpact = 0; this.justLanded = false; this.lastTouchT = -10;
     this.charge = 0; this.chargeCd = 0; this.burstT = 0;
   }
@@ -189,7 +190,10 @@ function stepPenguin(c, dt, M) {
   else if (c.charge > 0) c.charge = Math.max(0, c.charge - dt / CHARGE_FADE);
   const bm = 1 + (BURST_K - 1) * Math.min(1, c.burstT / BURST_EASE);
   const sm = bm * (k.charge ? 1 - CHARGE_SLOW * c.charge : 1);   // top-speed multiplier
-  const jumpPressed = k.jump && !c.prevJump; c.prevJump = k.jump;
+  // a fresh press arms the jump buffer; whatever uses the press clears it
+  if (k.jump && !c.prevJump) c.jumpBuf = JUMP_BUFFER; else if (c.jumpBuf > 0) c.jumpBuf -= dt;
+  c.prevJump = k.jump;
+  const jumpPressed = c.jumpBuf > 0;
   c.hitCd -= dt; c.jumpGrace -= dt;
   const D = arenaD(c.p.x, c.p.y, c.p.z);
   arenaN(c.p.x, c.p.y, c.p.z, _n);
@@ -226,6 +230,7 @@ function stepPenguin(c, dt, M) {
     c.v.y -= G * dt;
     if (!(_n.y < -0.2 && Math.abs(fs) < 6)) c.v.addScaledVector(_n, -3.25 * dt);                  // sticky force
     if (jumpPressed) {
+      c.jumpBuf = 0;
       c.v.addScaledVector(c.up, S.jump);
       c.jumping = true; c.jumpT = 0; c.jumped = true; c.jumpGrace = 0.1; c.onGround = false;
       c.events.push('jump');
@@ -240,7 +245,7 @@ function stepPenguin(c, dt, M) {
     if (jumpPressed && !c.doubleJumped && (!c.jumped || c.airT < 1.25) && c.rightT <= 0 && !c.touchingBad) {
       const df = k.pitch, dr = k.steer;
       const mag = Math.hypot(df, dr);
-      c.doubleJumped = true; c.jumping = false;
+      c.doubleJumped = true; c.jumping = false; c.jumpBuf = 0;
       if (mag > 0.5) {
         const fx = df / mag, rx = dr / mag;
         _a.copy(c.fwd); _a.y = 0; if (_a.lengthSq() < 1e-4) _a.set(0, 0, 1); _a.normalize();
@@ -324,7 +329,7 @@ function stepPenguin(c, dt, M) {
           _a.multiplyScalar(1 / ax);
           const ang = Math.acos(clamp(up2, -1, 1));
           c.w.copy(_a).multiplyScalar(ang / 0.45);
-          c.rightT = 0.45; c.turtleT = 0; c.doubleJumped = true; c.airT = 2; c.jumpGrace = 0.05;
+          c.rightT = 0.45; c.turtleT = 0; c.doubleJumped = true; c.airT = 2; c.jumpGrace = 0.05; c.jumpBuf = 0;
         }
       } else c.turtleT = 0;
     } else if (c.onGround && D2 > RIDE_H && D2 < RIDE_H + 0.16) {

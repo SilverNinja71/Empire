@@ -242,7 +242,9 @@ const UI = (() => {
           <div class="setrow"><label for="set-fov">Field of view<small>${s.fov}° horizontal (pros use 110°)</small></label><input id="set-fov" type="range" min="60" max="110" step="1" value="${s.fov}" style="--v:${rangePct(s.fov, 60, 110)}"></div>
           <div class="setrow"><label for="set-dist">Camera distance<small>${Math.round(s.camDist * 100)}%</small></label><input id="set-dist" type="range" min="0.75" max="1.5" step="0.05" value="${s.camDist}" style="--v:${rangePct(s.camDist, 0.75, 1.5)}"></div>
           <div class="setrow"><label for="set-vol">Volume<small>${Math.round(s.volume * 100)}%</small></label><input id="set-vol" type="range" min="0" max="1" step="0.05" value="${s.volume}" style="--v:${rangePct(s.volume, 0, 1)}"></div>
-          <div class="setrow"><label>Graphics<small>Low turns off shadows and lowers resolution for older devices.</small></label><div class="chips"><button class="chip" data-q="high" ${sel(s.quality === 'high')} type="button">High</button><button class="chip" data-q="low" ${sel(s.quality === 'low')} type="button">Low</button></div></div>
+          <div class="setrow"><label for="set-shake">Camera shake<small>${Math.round(s.camShake * 100)}%</small></label><input id="set-shake" type="range" min="0" max="1" step="0.05" value="${s.camShake}" style="--v:${rangePct(s.camShake, 0, 1)}"></div>
+          <div class="setrow"><label for="set-motion">Reduced motion<small>No camera shake, goal slow motion, white flash or confetti.</small></label><button class="switch" id="set-motion" role="switch" aria-checked="${s.reducedMotion}" type="button"><span class="knob"></span><span class="lbl">${s.reducedMotion ? 'On' : 'Off'}</span></button></div>
+          <div class="setrow"><label>Graphics<small>Auto keeps it smooth by lowering the resolution when needed. Low turns off shadows and effects for older devices.</small></label><div class="chips"><button class="chip" data-q="auto" ${sel(s.quality === 'auto')} type="button">Auto</button><button class="chip" data-q="high" ${sel(s.quality === 'high')} type="button">High</button><button class="chip" data-q="low" ${sel(s.quality === 'low')} type="button">Low</button></div></div>
           <div class="setrow"><label for="set-hints">Control hints<small>Shows the key list for the first seconds of a match.</small></label><button class="switch" id="set-hints" role="switch" aria-checked="${s.hints}" type="button"><span class="knob"></span><span class="lbl">${s.hints ? 'On' : 'Off'}</span></button></div>
           <div class="setrow"><label>Reset progress<small>Clears fish, upgrades, cosmetics and career stats on this device.</small></label><div><button class="btn sm ${resetArmed ? 'pink' : 'white'}" id="set-reset" type="button">${resetArmed ? 'Tap again to erase' : 'Reset save'}</button></div></div>
         </div></div>`;
@@ -335,6 +337,7 @@ const UI = (() => {
     }
     if (t.id === 'set-ballcam') { save.settings.ballCam = !save.settings.ballCam; persist(); render.settings(); return; }
     if (t.id === 'set-hints') { save.settings.hints = !save.settings.hints; persist(); render.settings(); return; }
+    if (t.id === 'set-motion') { save.settings.reducedMotion = !save.settings.reducedMotion; persist(); render.settings(); return; }
     if (t.dataset.q) { save.settings.quality = t.dataset.q; persist(); applyQuality(); $('#menu-bg').classList.toggle('lowq', t.dataset.q === 'low'); render.settings(); return; }
     if (t.id === 'set-reset') {
       if (!resetArmed) { resetArmed = true; render.settings(); return; }
@@ -353,6 +356,7 @@ const UI = (() => {
     const t = e.target, s = save.settings;
     if (t.id === 'set-fov') { s.fov = +t.value; t.previousElementSibling.querySelector('small').textContent = `${s.fov}° horizontal (pros use 110°)`; }
     else if (t.id === 'set-dist') { s.camDist = +t.value; t.previousElementSibling.querySelector('small').textContent = `${Math.round(s.camDist * 100)}%`; }
+    else if (t.id === 'set-shake') { s.camShake = +t.value; t.previousElementSibling.querySelector('small').textContent = `${Math.round(s.camShake * 100)}%`; }
     else if (t.id === 'set-vol') { s.volume = +t.value; Sfx.init(); Sfx.setVolume(s.volume); t.previousElementSibling.querySelector('small').textContent = `${Math.round(s.volume * 100)}%`; }
     else return;
     t.style.setProperty('--v', rangePct(+t.value, +t.min, +t.max));
@@ -379,7 +383,7 @@ const UI = (() => {
   function togglePause() {
     if (!inMatch() || M.state === 'over') return;
     M.paused = !M.paused;
-    KEYS.clear(); mouse.l = mouse.r = false;
+    clearInput();
     if (M.paused) show('pause'); else { show(null); canvas.focus(); }
   }
   function results() {
@@ -421,12 +425,12 @@ function startDemo() {
 
 // ----------------------------------------------------------- boot
 async function boot() {
-  try {
-    await Promise.race([document.fonts.load('48px "Lilita One"'), new Promise((r) => setTimeout(r, 2500))]);
-  } catch (e) { /* font fallback is fine */ }
+  // no waiting for the web fonts: name tags, badges and arena signs redraw themselves when the fonts arrive
   buildShowroom();
   applyQuality();
   startDemo();
+  // compile every shader in the arena now (in the background), so the first kickoff doesn't hitch
+  if (renderer.compileAsync) renderer.compileAsync(scene, camera).catch(() => {});
   UI.show('title');
   const ld = $('#loading'); ld.style.transition = 'opacity .5s'; ld.style.opacity = 0; setTimeout(() => { ld.hidden = true; }, 500);
   requestAnimationFrame((t) => { lastFrame = t; frame(t); });
@@ -440,7 +444,7 @@ boot().catch((err) => {
 });
 // debugging handle (read-only use from the console)
 window.__penguinLeague = {
-  M, A, LEVELS, simTick, startMatch, kickoffReset, save, predictGoal, BALL_R, UI, CAM, scene, camera, renderer,
+  M, A, LEVELS, simTick, startMatch, kickoffReset, save, predictGoal, BALL_R, UI, CAM, scene, camera, renderer, AUTOQ, ballView,
   drawOnce: (dt = 1 / 60) => tick(dt),
   setView: (px, py, pz, lx, ly, lz) => { CAM.override = { pos: new V3(px, py, pz), look: new V3(lx, ly, lz) }; },
   clearView: () => { CAM.override = null; },

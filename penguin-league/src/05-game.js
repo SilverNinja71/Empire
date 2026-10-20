@@ -269,9 +269,13 @@ function onGoal(team) {
   else {
     // slow-motion highlight: GOAL_HL.dur real seconds at GOAL_TS speed with the ball still rippling the net
     // while the camera zooms toward it and the scorer, then a short beat and the kickoff reset
-    M.stateT = GOAL_HL.dur * GOAL_TS + 0.45;
-    M.slowmo = GOAL_HL.dur; CAM.shake = 1; flash();
-    startHighlight(team, scorer); cine(true);
+    // Reduced motion: no slow motion, no camera swoop, no shake and no white flash, just a short pause
+    if (save.settings.reducedMotion) M.stateT = 1.6;
+    else {
+      M.stateT = GOAL_HL.dur * GOAL_TS + 0.45;
+      M.slowmo = GOAL_HL.dur; CAM.shake = 1; flash();
+      startHighlight(team, scorer); cine(true);
+    }
     Sfx.goal();
     const who = scorer === M.player ? 'You scored!' : scorer ? `${esc(scorer.name)} scores!` : 'Own goal!';
     banner('GOAL!', who + (assist ? ` · assist ${esc(assist.name)}` : ''), team ? 'orange' : 'blue', 1.7);
@@ -295,9 +299,32 @@ function endMatch() {
 }
 
 // ----------------------------------------------------------- input
+// Buttons are latched: every press is counted the moment it happens (keyboard, mouse and touch events, and the
+// gamepad, which is polled on every animation frame), and each physics tick uses the presses up one at a time.
+// So a tap that starts and ends between two ticks still gives one tick with the button down, and a fast double
+// tap still gives two separate presses (a jump and then a dive).
 const KEYS = new Set();
 const mouse = { l: false, r: false };
 const touch = { jx: 0, jy: 0, jump: false, boost: false, slide: false, charge: false };
+const ACTIONS = ['jump', 'boost', 'slide', 'charge'];
+const LATCH = { jump: { n: 0, out: false }, boost: { n: 0, out: false }, slide: { n: 0, out: false }, charge: { n: 0, out: false } };
+const KEY_ACTION = { Space: 'jump', ShiftLeft: 'boost', ShiftRight: 'boost', KeyX: 'slide', KeyF: 'charge' };
+const PAD_ACTION = { 0: 'jump', 1: 'boost', 2: 'slide', 5: 'charge' };   // A, B, X, RB
+const playing = () => inMatch() && !M.paused;
+function latchPress(a) { if (playing()) LATCH[a].n++; }
+function clearInput() {
+  KEYS.clear(); mouse.l = mouse.r = false;
+  for (const a of ACTIONS) { LATCH[a].n = 0; LATCH[a].out = false; }
+}
+// one tick's value of a button: queued presses first (with a released tick between two of them), then the held state
+function latched(a, held) {
+  const L = LATCH[a];
+  if (L.n > 0) {
+    if (L.out) L.out = false;
+    else { L.n--; L.out = true; }
+  } else L.out = held;
+  return L.out;
+}
 const inMatch = () => M.state !== 'idle' && !M.demo;
 const BLOCK = new Set(['Space', 'Tab', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight']);
 addEventListener('keydown', (e) => {
@@ -306,21 +333,44 @@ addEventListener('keydown', (e) => {
   if (e.repeat) return;
   KEYS.add(e.code);
   if (!inMatch()) return;
+  if (KEY_ACTION[e.code]) latchPress(KEY_ACTION[e.code]);
   if (e.code === 'KeyC') toggleBallCam();
   if ((e.code === 'Escape' || e.code === 'KeyP') && M.state !== 'over') UI.togglePause();
   if (e.code === 'Tab') HUD.scoreboard(true);
 });
 addEventListener('keyup', (e) => { KEYS.delete(e.code); if (e.code === 'Tab') HUD.scoreboard(false); });
-addEventListener('blur', () => { KEYS.clear(); mouse.l = mouse.r = false; });
-canvas.addEventListener('mousedown', (e) => { if (!inMatch()) return; if (e.button === 0) mouse.l = true; if (e.button === 2) mouse.r = true; Sfx.init(); });
+// switching to another window or tab pauses a match (and drops any held keys)
+function autoPause() { if (inMatch() && !M.paused && M.state !== 'over') UI.togglePause(); }
+addEventListener('blur', () => { clearInput(); autoPause(); });
+document.addEventListener('visibilitychange', () => { if (document.hidden) { clearInput(); autoPause(); } });
+canvas.addEventListener('mousedown', (e) => {
+  if (!inMatch()) return;
+  if (e.button === 0) { mouse.l = true; latchPress('boost'); }
+  if (e.button === 2) { mouse.r = true; latchPress('jump'); }
+  Sfx.init();
+});
 addEventListener('mouseup', (e) => { if (e.button === 0) mouse.l = false; if (e.button === 2) mouse.r = false; });
 canvas.addEventListener('contextmenu', (e) => e.preventDefault());
-let padPrev = {};
-function readPad() {
-  if (!navigator.getGamepads) return null;
-  for (const gp of navigator.getGamepads()) if (gp && gp.connected) return gp;
-  return null;
+// gamepad: polled once per animation frame (menus and pause included), so Start can both pause and unpause
+const PAD = { on: false, axes: [0, 0, 0, 0], btn: new Float32Array(17), prev: new Uint8Array(17) };
+function pollPad() {
+  let gp = null;
+  if (navigator.getGamepads) for (const g of navigator.getGamepads()) if (g && g.connected) { gp = g; break; }
+  PAD.on = !!gp;
+  if (!gp) { PAD.prev.fill(0); return; }
+  for (let i = 0; i < 4; i++) PAD.axes[i] = gp.axes[i] || 0;
+  for (let i = 0; i < PAD.btn.length; i++) {
+    const b = gp.buttons[i], v = b ? (typeof b === 'object' ? b.value : b) : 0, on = b ? (typeof b === 'object' ? b.pressed : b > 0.5) : false;
+    PAD.btn[i] = v;
+    if (on && !PAD.prev[i]) {
+      if (PAD_ACTION[i]) latchPress(PAD_ACTION[i]);
+      if (i === 3 && playing()) toggleBallCam();
+      if (i === 9 && inMatch() && M.state !== 'over') UI.togglePause();
+    }
+    PAD.prev[i] = on ? 1 : 0;
+  }
 }
+const padOn = (i) => PAD.prev[i] === 1;
 const dz = (v) => (Math.abs(v) < 0.15 ? 0 : (v - Math.sign(v) * 0.15) / 0.85);
 function readPlayerInput(c) {
   const k = c.ctrl, K = (code) => KEYS.has(code);
@@ -329,20 +379,15 @@ function readPlayerInput(c) {
   const roll = 0;   // rolling is not possible
   let pitch = thr;
   let jump = K('Space') || mouse.r, boost = K('ShiftLeft') || K('ShiftRight') || mouse.l, slide = K('KeyX'), charge = K('KeyF');
-  const gp = readPad();
-  if (gp) {
-    const ax = gp.axes, bt = gp.buttons, val = (i) => (bt[i] ? (typeof bt[i] === 'object' ? bt[i].value : bt[i]) : 0), on = (i) => !!(bt[i] && bt[i].pressed);
-    st += dz(ax[0] || 0); pitch += -dz(ax[1] || 0);
-    thr += val(7) - val(6);
-    jump = jump || on(0); boost = boost || on(1); slide = slide || on(2); charge = charge || on(5);
-    if (on(3) && !padPrev[3]) toggleBallCam();
-    if (on(9) && !padPrev[9] && M.state !== 'over') UI.togglePause();
-    padPrev = { 3: on(3), 9: on(9) };
+  if (PAD.on) {
+    st += dz(PAD.axes[0]); pitch += -dz(PAD.axes[1]);
+    thr += PAD.btn[7] - PAD.btn[6];
+    jump = jump || padOn(0); boost = boost || padOn(1); slide = slide || padOn(2); charge = charge || padOn(5);
   }
   if (touch.jx || touch.jy) { st += touch.jx; thr += clamp(-touch.jy * 1.5, -1, 1); pitch += -touch.jy; }
   jump = jump || touch.jump; boost = boost || touch.boost; slide = slide || touch.slide; charge = charge || touch.charge;
   k.throttle = clamp(thr, -1, 1); k.steer = clamp(st, -1, 1); k.pitch = clamp(pitch, -1, 1); k.roll = clamp(roll, -1, 1);
-  k.jump = jump; k.boost = boost; k.slide = slide; k.charge = charge;
+  k.jump = latched('jump', jump); k.boost = latched('boost', boost); k.slide = latched('slide', slide); k.charge = latched('charge', charge);
 }
 function toggleBallCam() { save.settings.ballCam = !save.settings.ballCam; persist(); HUD.camChip(); }
 // touch controls
@@ -360,7 +405,7 @@ function toggleBallCam() { save.settings.ballCam = !save.settings.ballCam; persi
   joy.addEventListener('pointerup', up); joy.addEventListener('pointercancel', up);
   for (const [id, key] of [['t-jump', 'jump'], ['t-boost', 'boost'], ['t-slide', 'slide'], ['t-shot', 'charge']]) {
     const el = $('#' + id);
-    el.addEventListener('pointerdown', (e) => { touch[key] = true; el.classList.add('on'); el.setPointerCapture(e.pointerId); e.preventDefault(); });
+    el.addEventListener('pointerdown', (e) => { touch[key] = true; latchPress(key); el.classList.add('on'); el.setPointerCapture(e.pointerId); e.preventDefault(); });
     const off = () => { touch[key] = false; el.classList.remove('on'); };
     el.addEventListener('pointerup', off); el.addEventListener('pointercancel', off);
   }
@@ -374,6 +419,8 @@ const HUD = (() => {
   const boostBox = $('#boost'), boostLbl = $('#boost .num small'), chargeEl = $('#charge'), chargeFill = $('#charge i');
   const ARC = 2 * Math.PI * 43 * 0.75;
   let hintT = 0, lastBoost = -1, lastClock = '', lastCharge = -1, lastBurst = null, chargeFull = false;
+  // last values written to the page, so the HUD only touches the DOM when something visible changes
+  let lastS0 = -1, lastS1 = -1, lastSpeed = -1, lastArrow = '';
   chip.addEventListener('click', () => { toggleBallCam(); chip.blur(); });
   $('#btn-pause').addEventListener('click', () => UI.togglePause());
   const _pv = new V3();
@@ -383,6 +430,7 @@ const HUD = (() => {
       hintT = save.settings.hints ? 14 : 0; hint.style.opacity = hintT > 0 ? 1 : 0; hint.hidden = hintT <= 0;
       $('#touch').hidden = !document.body.classList.contains('touch');
       this.camChip(); lastBoost = -1; lastClock = ''; lastCharge = -1; lastBurst = null; chargeFull = false;
+      lastS0 = lastS1 = lastSpeed = -1; lastArrow = '';
       s0.textContent = '0'; s1.textContent = '0';
     },
     camChip() { chip.setAttribute('aria-pressed', save.settings.ballCam ? 'true' : 'false'); chip.textContent = `BALL CAM ${save.settings.ballCam ? 'ON' : 'OFF'} · C`; },
@@ -393,7 +441,8 @@ const HUD = (() => {
     },
     update(dt) {
       if (!inMatch()) return;
-      s0.textContent = M.score[0]; s1.textContent = M.score[1];
+      if (M.score[0] !== lastS0) { lastS0 = M.score[0]; s0.textContent = lastS0; }
+      if (M.score[1] !== lastS1) { lastS1 = M.score[1]; s1.textContent = lastS1; }
       const ct = M.overtime ? fmtUp(M.otTime) : fmtClock(M.clock);
       if (ct !== lastClock) { time.textContent = ct; lastClock = ct; ot.hidden = !M.overtime; }
       const p = M.player;
@@ -403,7 +452,8 @@ const HUD = (() => {
         arc.setAttribute('stroke-dasharray', `${(ARC * p.boost / p.stats.boostMax).toFixed(1)} 999`);
         arc.setAttribute('stroke', p.boost > 70 ? '#ff8a1f' : p.boost > 30 ? '#ffd23f' : '#ff5fa8');
       }
-      speed.style.opacity = p.supersonic && !p.demolished ? 1 : 0;
+      const so = p.supersonic && !p.demolished ? 1 : 0;
+      if (so !== lastSpeed) { lastSpeed = so; speed.style.opacity = so; }
       // charged-shot meter (ready once it passes CHARGE_MIN) and the crystal speed-burst glow on the boost dial
       const cq = Math.round(p.charge * 50);
       if (cq !== lastCharge) {
@@ -415,9 +465,10 @@ const HUD = (() => {
       const burst = p.burstT > 0;
       if (burst !== lastBurst) { lastBurst = burst; boostBox.classList.toggle('burst', burst); boostLbl.textContent = burst ? 'BURST' : 'BOOST'; }
       if (hintT > 0) { hintT -= dt; if (hintT <= 0) { hint.style.opacity = 0; setTimeout(() => { hint.hidden = true; }, 700); } }
-      // off-screen ball arrow
+      // off-screen ball arrow (from the interpolated ball the player sees, not the raw physics state)
+      let shown = false;
       if (!M.ballHidden) {
-        _pv.copy(M.ball.p).project(camera);
+        _pv.copy(ballView.mesh.position).project(camera);
         let x = _pv.x, y = _pv.y;
         const behind = _pv.z > 1;
         if (behind) { x = -x; y = -y; }
@@ -425,10 +476,12 @@ const HUD = (() => {
           const a = Math.atan2(y, x), ex = Math.cos(a), ey = Math.sin(a);
           const s = Math.min(0.9 / Math.abs(ex || 1e-3), 0.85 / Math.abs(ey || 1e-3));
           const sx = (ex * s * 0.5 + 0.5) * innerWidth, sy = (-ey * s * 0.5 + 0.5) * innerHeight;
-          arrow.style.display = 'block';
-          arrow.style.transform = `translate(${sx}px, ${sy}px) rotate(${Math.atan2(ex, ey)}rad)`;
-        } else arrow.style.display = 'none';
-      } else arrow.style.display = 'none';
+          const tf = `translate(${sx.toFixed(1)}px, ${sy.toFixed(1)}px) rotate(${Math.atan2(ex, ey).toFixed(3)}rad)`;
+          if (tf !== lastArrow) { lastArrow = tf; arrow.style.transform = tf; }
+          shown = true;
+        }
+      }
+      if (shown !== (arrow.style.display === 'block')) arrow.style.display = shown ? 'block' : 'none';
     },
   };
 })();
@@ -459,10 +512,22 @@ function statsTable() {
 
 // ----------------------------------------------------------- frame loop
 let lastFrame = performance.now(), acc = 0;
+const MAX_CATCHUP = 30;   // ticks per frame at most (0.25 s at 120 Hz); below ~4 fps the game slows down rather than freezing
+let demoAcc = 0;
+const DEMO_FPS = 30;   // the demo match behind the menus only needs to be a moving backdrop
 function frame(now) {
   requestAnimationFrame(frame);
   let dt = (now - lastFrame) / 1000; lastFrame = now;
-  if (dt > 0.1) dt = 0.1; if (dt < 0) dt = 0;
+  if (dt > 0.25) dt = 0.25; if (dt < 0) dt = 0;
+  pollPad();
+  if (M.demo && !UI.showroomOn()) {
+    demoAcc += dt;
+    if (demoAcc < 1 / (DEMO_FPS + 1)) return;
+    dt = Math.min(0.25, demoAcc); demoAcc = 0;
+  } else {
+    demoAcc = 0;
+    autoQuality(dt);
+  }
   tick(dt);
 }
 function tick(dt) {
@@ -472,8 +537,9 @@ function tick(dt) {
     let ts = 1;
     if (M.slowmo > 0) { M.slowmo -= dt; ts = GOAL_TS; }
     acc += dt * ts;
-    let n = 0; while (acc >= DT && n < 12) { simTick(); acc -= DT; n++; }
-    if (n >= 12) acc = 0;
+    // catch up after a slow frame (up to MAX_CATCHUP ticks, ~0.25 s), then drop the rest instead of spiralling
+    let n = 0; while (acc >= DT && n < MAX_CATCHUP) { simTick(); acc -= DT; n++; }
+    if (n >= MAX_CATCHUP) acc = 0;
   }
   const alpha = clamp(acc / DT, 0, 1);
   const fdt = running ? dt * (M.slowmo > 0 ? GOAL_TS : 1) : 0;
