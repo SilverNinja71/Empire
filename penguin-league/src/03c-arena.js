@@ -850,7 +850,7 @@ FRAME_HOOKS.push((gdt, rdt) => {
   if (F.halo) { F.halo.visible = arenaHi(); F.halo.material.size = 7 * (0.94 + 0.06 * Math.sin(F.t.value * 2.3)); }
 });
 
-// ----------------------------------------------------------- fish boost pads
+// ----------------------------------------------------------- boost pads: big ice crystals + small fish
 // chunky cartoon fish (nose -X, back +Y): lathe teardrop body, blob fins, big eyes; vertex coloured
 function arenaFishGeo(body, belly, fin) {
   const prof = [];
@@ -878,7 +878,26 @@ function arenaFishGeo(body, belly, fin) {
   return arenaMerge(parts);
 }
 const fishGeo = arenaFishGeo(0xff7a1a, 0xffe2b8, 0xffd23f);
-const arenaFishGold = arenaFishGeo(0xffb000, 0xfff0a8, 0xff7a1a);
+// glowing ice-crystal cluster (centred on its middle): a tall hexagonal spire, four tilted side crystals and two
+// shards at the foot; deep teal at the base through bright cyan to near-white tips, flat shaded for crisp facets
+function arenaCrystalGeo() {
+  const prism = new THREE.CylinderGeometry(0.82, 1, 1, 6); prism.translate(0, 0.5, 0);
+  const tip = new THREE.ConeGeometry(0.82, 1, 6); tip.translate(0, 0.5, 0);
+  const lo = new THREE.Color(0x1d7fc4), mid = new THREE.Color(0x5fe0ff), hi = new THREE.Color(0xf2fdff);
+  const col = (o, x, y) => { const t = clamp((y + 0.75) / 1.55, 0, 1); if (t < 0.55) o.copy(lo).lerp(mid, t / 0.55); else o.copy(mid).lerp(hi, (t - 0.55) / 0.45); };
+  const spire = (x, z, h, r, rx, rz, ry = 0) => {
+    const m = arenaM4(x, -0.72, z, rx, 0, rz).multiply(arenaM4(0, 0, 0, 0, ry, 0));   // spin about its own axis, then tilt
+    return [[prism, m.clone().multiply(arenaM4(0, 0, 0, 0, 0, 0, r, h, r)), col], [tip, m.clone().multiply(arenaM4(0, h, 0, 0, 0, 0, r, r * 1.7, r)), col]];
+  };
+  const parts = [...spire(0, 0, 0.95, 0.24, 0, 0, 0.3)];
+  for (let i = 0; i < 4; i++) {
+    const a = i * Math.PI / 2 + Math.PI / 4, x = Math.cos(a) * 0.2, z = Math.sin(a) * 0.2;
+    parts.push(...spire(x, z, 0.42 + (i % 2) * 0.14, 0.13 + (i % 2) * 0.02, Math.sin(a) * 0.5, -Math.cos(a) * 0.5, a));
+  }
+  parts.push(...spire(0.34, -0.12, 0.16, 0.08, 0.2, -0.9, 1), ...spire(-0.3, 0.2, 0.12, 0.07, -0.3, 0.8, 2));
+  return arenaMerge(parts);
+}
+const arenaCrystal = arenaCrystalGeo();
 let arenaPads = null;
 // shared instanced visuals for every pad (a handful of draw calls in total)
 function arenaPadSys() {
@@ -908,28 +927,30 @@ function arenaPadSys() {
       : [[0, -0.08], [R, -0.08], [R, 0.06], [R - 0.06, 0.13], [R - 0.14, 0.14], [0, 0.14]];
     const lathe = new THREE.LatheGeometry(prof.map(([x, y]) => new THREE.Vector2(x, y)), 32);
     const rim = new THREE.TorusGeometry(big ? R * 0.8 : R * 0.86, big ? 0.12 : 0.085, 8, 40); rim.rotateX(Math.PI / 2);
-    const baseGeo = arenaMerge([[lathe, new THREE.Matrix4(), (o, x, y) => o.setHex(y > top - 0.02 ? 0xe4f2ff : big && y > 0.1 ? 0xffd23f : 0x8fbbe6)], [rim, arenaM4(0, top, 0), big ? 0xffc21a : 0xffffff]]);
+    const baseGeo = arenaMerge([[lathe, new THREE.Matrix4(), (o, x, y) => o.setHex(y > top - 0.02 ? 0xe4f2ff : big && y > 0.1 ? 0x8fe6ff : 0x8fbbe6)], [rim, arenaM4(0, top, 0), big ? 0x5fdcff : 0xffffff]]);
     const ringGeo = new THREE.RingGeometry(R * (big ? 0.36 : 0.42), R * (big ? 0.66 : 0.7), 48, 1); ringGeo.rotateX(-Math.PI / 2); ringGeo.translate(0, top + 0.025, 0);
     const prog = new THREE.InstancedBufferAttribute(new Float32Array(N).fill(1), 1); ringGeo.setAttribute('aProg', prog);
     const glowGeo = new THREE.PlaneGeometry(1, 1); glowGeo.rotateX(-Math.PI / 2);
+    // big pads: a glowing (emissive, bloom-friendly) faceted ice crystal; small pads: a fish
+    const crysMat = toon(0xffffff, { vertexColors: true, flatShading: true, roughness: 0.16, envMapIntensity: 0.9, emissive: 0x27b4ec, emissiveIntensity: 0.62 });
     const K = {
-      R, top, prog, hover: big ? 1.6 : 0.6, fs: big ? 1.3 : 0.62,
+      R, top, prog, hover: big ? 1.25 : 0.6, fs: big ? 1.25 : 0.62,
       base: new THREE.InstancedMesh(baseGeo, toon(0xffffff, { vertexColors: true }), N),
       baseOl: new THREE.InstancedMesh(baseGeo, outlineMat(0.035), N),
-      ring: new THREE.InstancedMesh(ringGeo, arcMat(big ? 0xffc21a : 0xffd23f), N),
-      fish: new THREE.InstancedMesh(big ? arenaFishGold : fishGeo, toon(0xffffff, { vertexColors: true }), N),
-      fishOl: new THREE.InstancedMesh(big ? arenaFishGold : fishGeo, outlineMat(0.045), N),
-      glow: new THREE.InstancedMesh(glowGeo, new THREE.MeshBasicMaterial({ map: glowTex, color: big ? 0xffb300 : 0xffc640, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -4 }), N),
+      ring: new THREE.InstancedMesh(ringGeo, arcMat(big ? 0x46dcff : 0xffd23f), N),
+      fish: new THREE.InstancedMesh(big ? arenaCrystal : fishGeo, big ? crysMat : toon(0xffffff, { vertexColors: true }), N),
+      fishOl: new THREE.InstancedMesh(big ? arenaCrystal : fishGeo, outlineMat(0.045), N),
+      glow: new THREE.InstancedMesh(glowGeo, new THREE.MeshBasicMaterial({ map: glowTex, color: big ? 0x3fd2ff : 0xffc640, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -4 }), N),
     };
     K.base.receiveShadow = true; K.fish.castShadow = true;
     K.all = [K.base, K.baseOl, K.ring, K.fish, K.fishOl, K.glow];
     return K;
   };
   const S = { grp, small: kind(false), big: kind(true) };
-  // big pads: soft light column + rising sparkles
+  // big pads: soft icy light column + rising sparkles
   const beamGeo = new THREE.CylinderGeometry(1, 0.75, 1, 24, 1, true); beamGeo.translate(0, 0.5, 0);
   S.beam = new THREE.InstancedMesh(beamGeo, new THREE.ShaderMaterial({
-    uniforms: { c: { value: new THREE.Color(0xffc93a) }, uT: arenaFX.t },
+    uniforms: { c: { value: new THREE.Color(0x52dcff) }, uT: arenaFX.t },
     vertexShader: `varying float vY; varying float vF;
       void main(){ vY = uv.y; vec4 p = vec4(position, 1.0); vec3 n = normal;
       #ifdef USE_INSTANCING
@@ -946,7 +967,7 @@ function arenaPadSys() {
   }), N);
   S.sparkN = 8;
   const spGeo = new THREE.BufferGeometry(); spGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(N * S.sparkN * 3).fill(-50), 3));
-  S.spark = new THREE.Points(spGeo, new THREE.PointsMaterial({ map: arenaSparkTex(), color: new THREE.Color(0xfff0a0).multiplyScalar(2), size: 0.55, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }));
+  S.spark = new THREE.Points(spGeo, new THREE.PointsMaterial({ map: arenaSparkTex(), color: new THREE.Color(0xc8f6ff).multiplyScalar(2), size: 0.55, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }));
   S.t = 0;
   for (const m of [...S.small.all, ...S.big.all, S.beam, S.spark]) { m.frustumCulled = false; if (m.isInstancedMesh) m.count = 0; grp.add(m); }
   S.beam.renderOrder = 2; S.spark.renderOrder = 3;
@@ -984,12 +1005,14 @@ function updatePadViews(dt) {
     if (!p.active && v.on) v.out = 1;
     v.on = p.active; v.pop = Math.min(1, v.pop + dt * 2.6); v.out = Math.max(0, v.out - dt * 5);
     const e = v.pop - 1, pop = 1 + 2.7 * e * e * e + 1.7 * e * e;   // ease-out-back
-    // fish: spin, bob, little swim wiggle; pops in on respawn, shrinks away when eaten
+    // fish: spin, bob, little swim wiggle; crystals: slow turn and a gentle float. Both pop in on respawn and
+    // shrink away when taken
     let fs = 0, fy = K.hover + Math.sin(v.t * 2.6) * (p.big ? 0.13 : 0.06);
     if (p.active) fs = K.fs * Math.max(0.001, pop);
     else if (v.out > 0) { fs = K.fs * v.out; fy += (1 - v.out) * 0.8; }
     v.fish.visible = fs > 0;
-    v.fish.position.set(0, fy, 0); v.fish.rotation.set(Math.sin(v.t * 6) * 0.1, v.t * (p.big ? 1.3 : 1.9) + (1 - v.out) * (p.active ? 0 : 6), Math.sin(v.t * 3.1) * 0.12, 'YXZ'); v.fish.scale.setScalar(Math.max(fs, 1e-4));
+    const wig = p.big ? 0.2 : 1;
+    v.fish.position.set(0, fy, 0); v.fish.rotation.set(Math.sin(v.t * 6) * 0.1 * wig, v.t * (p.big ? 0.8 : 1.9) + (1 - v.out) * (p.active ? 0 : 6), Math.sin(v.t * 3.1) * 0.12 * wig, 'YXZ'); v.fish.scale.setScalar(Math.max(fs, 1e-4));
     if (fs > 0) {
       _apM.compose(_apP.set(p.x, fy, p.z), _apQ.setFromEuler(v.fish.rotation), _apS.setScalar(fs));
       K.fish.setMatrixAt(i, _apM); K.fishOl.setMatrixAt(i, _apM);

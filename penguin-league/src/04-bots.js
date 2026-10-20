@@ -9,25 +9,25 @@ const LEVELS = {
   easy: {
     key: 'easy', label: 'Easy', color: '#72dc4e', blurb: 'Chases the ball, rarely boosts, never leaves the ground.',
     react: 0.38, aim: 0.55, whiff: 1.5, horizon: 1.0, boost: 0.25, jumpShot: 0, aerialH: 0, dodge: 0.12, rotate: 0,
-    kickBoost: false, kickFlip: false, recover: 0.4, think: 7, cap: 0.85, pads: 0, demo: 0, shadow: false, flipSpeed: false, hesitate: 0.8,
+    kickBoost: false, kickFlip: false, recover: 0.4, think: 7, cap: 0.85, pads: 0, demo: 0, shadow: false, flipSpeed: false, hesitate: 0.8, charge: 0,
     reward: 1, skill: [1, 1, 0, 1, 1],
   },
   normal: {
     key: 'normal', label: 'Normal', color: '#ffd23f', blurb: 'Reads bounces, flips into shots, tries low aerials.',
     react: 0.2, aim: 0.15, whiff: 0.55, horizon: 2.4, boost: 0.7, jumpShot: 0.4, aerialH: 5.5, dodge: 0.5, rotate: 1,
-    kickBoost: true, kickFlip: false, recover: 0.75, think: 15, cap: 1, pads: 0.4, demo: 0, shadow: false, flipSpeed: false, hesitate: 0.2,
+    kickBoost: true, kickFlip: false, recover: 0.75, think: 15, cap: 1, pads: 0.4, demo: 0, shadow: false, flipSpeed: false, hesitate: 0.2, charge: 0.3,
     reward: 1.6, skill: [3, 3, 2, 3, 3],
   },
   hard: {
     key: 'hard', label: 'Hard', color: '#ff8a1f', blurb: 'Rotates with teammates, shadows defence, flips kickoffs.',
     react: 0.15, aim: 0.09, whiff: 0.35, horizon: 3.2, boost: 0.9, jumpShot: 0.7, aerialH: 9, dodge: 0.75, rotate: 2,
-    kickBoost: true, kickFlip: true, recover: 0.9, think: 24, cap: 1, pads: 0.8, demo: 0.03, shadow: true, flipSpeed: false, hesitate: 0.04,
+    kickBoost: true, kickFlip: true, recover: 0.9, think: 24, cap: 1, pads: 0.8, demo: 0.03, shadow: true, flipSpeed: false, hesitate: 0.04, charge: 0.55,
     reward: 2.4, skill: [4, 4, 4, 4, 4],
   },
   god: {
     key: 'god', label: 'God', color: '#8d5bff', blurb: 'Near-instant reads, full aerials, speed flips, demos.',
     react: 0.035, aim: 0.012, whiff: 0, horizon: 4.5, boost: 1, jumpShot: 1, aerialH: 19, dodge: 1, rotate: 2,
-    kickBoost: true, kickFlip: true, recover: 1.3, think: 60, cap: 1, pads: 1, demo: 0.1, shadow: true, flipSpeed: true, hesitate: 0,
+    kickBoost: true, kickFlip: true, recover: 1.3, think: 60, cap: 1, pads: 1, demo: 0.1, shadow: true, flipSpeed: true, hesitate: 0, charge: 0.8,
     reward: 4, skill: [5, 5, 5, 5, 5],
   },
 };
@@ -37,9 +37,9 @@ const SKILL_NAMES = ['Reaction', 'Aim', 'Aerials', 'Teamwork', 'Boost use'];
 // ----------------------------------------------------------- ball prediction (per perception delay)
 const PRED_N = 300; // 5 s at 60 Hz
 function makePred() { const s = []; for (let i = 0; i < PRED_N; i++) s.push({ t: 0, x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0 }); return { s, n: 0, t0: 0 }; }
-const _pb = { p: new V3(), v: new V3() };
-function computePred(pred, p, v, t0, horizon) {
-  _pb.p.copy(p); _pb.v.copy(v);
+const _pb = { p: new V3(), v: new V3(), w: new V3() };
+function computePred(pred, p, v, w, t0, horizon) {
+  _pb.p.copy(p); _pb.v.copy(v); _pb.w.copy(w);
   const n = Math.min(PRED_N, Math.ceil(horizon * 60));
   for (let i = 0; i < n; i++) {
     stepBallPhys(_pb, 1 / 120); stepBallPhys(_pb, 1 / 120);
@@ -174,7 +174,7 @@ class Bot {
     this.faceBall = false; this.man = null; this.role = 'attack'; this.ic = { found: false, t: 0, bx: 0, by: 0, bz: 0, hx: 0, hz: 0, ax: 0, az: 1, aerial: false };
     this.reach = new Float32Array(101); this.noiseA = 0; this.noiseT = 0; this.whiff = 0; this.stuckT = 0; this.unstuckUntil = 0;
     this.aggr = rand(0.45, 1); this.hesitateT = 0; this.dodgePlan = false; this.lastIcT = -1; this.nextFlip = 0; this.clearing = false;
-    this.demoUntil = 0; this.demoTarget = null; this.turtleTog = 0; this.lastTouchSeen = 0; this.icTouch = -1;
+    this.demoUntil = 0; this.demoTarget = null; this.turtleTog = 0; this.lastTouchSeen = 0; this.icTouch = -1; this.chargePlan = false;
   }
   update(dt, M) {
     const c = this.car, k = c.ctrl;
@@ -264,15 +264,26 @@ class Bot {
     this.faceBall = false; this.clearing = false;
     if (M.t > this.noiseT) { this.noiseT = M.t + rand(0.5, 1.3); this.noiseA = (Math.random() * 2 - 1) * L.aim; this.whiff = (Math.random() * 2 - 1) * L.whiff; }
     if (M.kickoff) { this.decideKickoff(M); return; }
-    let role = c.role;
-    if (L.rotate === 0) role = (this.aggr > 0.6 || this.closestMate(M) === c) ? 'attack' : 'support';
-    const threat = this.ownGoalThreat(pred, M);
-    if (threat >= 0 && threat < 3.4 && role !== 'wing') role = 'save';
+    let role = c.role;   // dealt by the team coach from this penguin's duty (striker / goalie / sweeper / flex)
+    const duty = c.duty || 'flex';
     const b0 = sliceAt(pred, M.t + 0.35) || M.ball.p;
-    if (role !== 'attack' && role !== 'save') {
-      // free ball right in front of us: take it
-      const d = Math.hypot(b0.x - c.p.x, b0.z - c.p.z);
-      if (d < 9 && (b0.y ?? 1) < 3 && this.isGoalSide(b0.x, b0.z)) role = 'attack';
+    const dBall = Math.hypot(b0.x - c.p.x, b0.z - c.p.z);
+    if (L.rotate === 0) {
+      // easy bots never learned positions: alone they just chase, on a team they keep their duty only loosely
+      if (duty === 'flex') role = (this.aggr > 0.6 || this.closestMate(M) === c) ? 'attack' : 'support';
+      else if (role !== 'attack' && this.aggr > 0.8 && dBall < 14) role = 'attack';
+    }
+    const threat = this.ownGoalThreat(pred, M);
+    if (threat >= 0 && threat < 3.4 && role !== 'wing') {
+      // a shot is coming: the keeper (or a lone penguin, or whoever is closest on the goal side) goes for the
+      // save; everyone else drops back to cover instead of chasing the same ball
+      if (duty === 'goalie' || duty === 'flex' || this.closestGoalSide(M, b0) === c) role = 'save';
+      else role = duty === 'sweeper' ? 'sweep' : 'retreat';
+    }
+    if (role !== 'attack' && role !== 'save' && dBall < 9 && (b0.y ?? 1) < 3 && this.isGoalSide(b0.x, b0.z) && !inCorner(b0)) {
+      // free ball right in front of us: take it, unless the lead striker will get there first
+      const lead = M.coach[c.team];
+      if (!lead || lead === c || lead.demolished || Math.hypot(b0.x - lead.p.x, b0.z - lead.p.z) > dBall + 5) role = 'attack';
     }
     if (role === 'attack' && L.shadow && M.mode !== '5v5') {
       const myD = Math.hypot(b0.x - c.p.x, b0.z - c.p.z) / Math.max(9, c.v.length());
@@ -295,6 +306,8 @@ class Bot {
       case 'save': this.planAttack(M, pred, true); break;
       case 'support': this.planSupport(M, pred); break;
       case 'defend': this.planDefend(M, pred); break;
+      case 'keeper': this.planKeeper(M, pred); break;
+      case 'sweep': this.planSweep(M, pred); break;
       case 'wing': this.planWing(M, pred); break;
       case 'shadow': this.planShadow(M, pred); break;
       default: this.planRetreat(M, pred);
@@ -303,6 +316,16 @@ class Bot {
   closestMate(M) {
     let best = null, bd = 1e9;
     for (const o of M.cars) { if (o.team !== this.car.team || o.demolished) continue; const d = o.p.distanceToSquared(M.ball.p); if (d < bd) { bd = d; best = o; } }
+    return best;
+  }
+  // the teammate best placed to make a save: on the goal side of the ball and nearest to it
+  closestGoalSide(M, b) {
+    const team = this.car.team; let best = null, bd = 1e9;
+    for (const o of M.cars) {
+      if (o.team !== team || o.demolished || !(team === 0 ? o.p.z < b.z - 1 : o.p.z > b.z + 1)) continue;
+      const d = Math.hypot(o.p.x - b.x, o.p.z - b.z);
+      if (d < bd) { bd = d; best = o; }
+    }
     return best;
   }
   planAttack(M, pred, clear) {
@@ -314,8 +337,8 @@ class Bot {
       aimFor(c.team, s.x, s.z, c.p.x, c.p.z, clear, _aim);
       this.tgt.set(s.x - _aim.x * 2.5, 0, s.z - _aim.z * 2.5); this.want = VMAX; this.allowBoost = true; return;
     }
-    if (Math.abs(ic.t - this.lastIcT) > 0.3 || this.icTouch !== M.touchSerial) { this.dodgePlan = Math.random() < this.L.dodge; this.lastIcT = ic.t; this.icTouch = M.touchSerial; }
-    if (ic.aerial) { if (c.onGround && !this.man) { this.man = new AerialMan(ic.t); this.lastTouchSeen = M.touchSerial; } return; }
+    if (Math.abs(ic.t - this.lastIcT) > 0.3 || this.icTouch !== M.touchSerial) { this.dodgePlan = Math.random() < this.L.dodge; this.chargePlan = Math.random() < this.L.charge; this.lastIcT = ic.t; this.icTouch = M.touchSerial; }
+    if (ic.aerial) { if (c.onGround && !this.man) { this.man = new AerialMan(ic.t); this.lastTouchSeen = M.touchSerial; c.ctrl.charge = false; } return; }
     const tRel = Math.max(0.05, ic.t - M.t);
     // far away: drive for a point behind the ball on the shot line to get lined up.
     // close in: offset-hit, i.e. pick which side of the ball to strike so the contact
@@ -369,11 +392,30 @@ class Bot {
     const x = deep ? -Math.sign(b.x || 1) * (A.gw - 2.5) : clamp(b.x * 0.25, -A.gw + 1.5, A.gw - 1.5);
     this.setPos(x, own + dir * (deep ? 3.5 : 7), true);
   }
+  // 2v2 goalie/sweeper: sweeps behind the striker while play is up-field, drops onto the goal line as it comes back
+  planKeeper(M, pred) {
+    const c = this.car, own = c.team === 0 ? -A.hz : A.hz, dir = c.team === 0 ? 1 : -1;
+    const b = sliceAt(pred, M.t + 0.5) || M.ball.p;
+    const depth = Math.abs(b.z - own) / (2 * A.hz);   // 0 = on our goal line, 1 = on theirs
+    if (depth < 0.42) { this.planDefend(M, pred); return; }
+    const k = clamp(0.62 - depth * 0.25, 0.4, 0.55);   // how far back from the ball toward our goal
+    const z = b.z + (own - b.z) * k;
+    this.setPos(b.x * (1 - k) * 0.8, dir > 0 ? Math.min(z, -3) : Math.max(z, 3), true);
+  }
+  // 5v5 sweeper: holds the middle of our half on the ball side, ready to clear whatever gets past the strikers
+  planSweep(M, pred) {
+    const c = this.car, own = c.team === 0 ? -A.hz : A.hz, dir = c.team === 0 ? 1 : -1;
+    const b = sliceAt(pred, M.t + 0.5) || M.ball.p;
+    const z = b.z + (own - b.z) * 0.5;
+    this.setPos(b.x * 0.45, dir > 0 ? clamp(z, own + 12, -4) : clamp(z, 4, own - 12), true);
+  }
   planWing(M, pred) {
     const c = this.car, dir = c.team === 0 ? 1 : -1;
     const b = sliceAt(pred, M.t + 0.6) || M.ball.p;
     const side = (c.wingIndex || 0) % 2 ? 1 : -1;
-    const z = clamp(b.z - dir * A.hz * 0.2, -A.hz + 10, A.hz - 10);
+    // wings are outlets: they never drop deeper than the middle of our half, so they don't crowd a defensive corner
+    let z = clamp(b.z - dir * A.hz * 0.2, -A.hz + 10, A.hz - 10);
+    z = dir > 0 ? Math.max(z, -A.hz * 0.4) : Math.min(z, A.hz * 0.4);
     this.setPos(side * A.hx * 0.58 + b.x * 0.2, z, true);
   }
   planShadow(M, pred) {
@@ -417,7 +459,7 @@ class Bot {
   // ---------- acting
   execute(dt, M) {
     const c = this.car, k = c.ctrl, L = this.L;
-    k.jump = false; k.roll = 0; k.slide = false; k.pitch = 0;
+    k.jump = false; k.roll = 0; k.slide = false; k.pitch = 0; k.charge = false;
     if (!c.onGround) {
       if (c.touchingBad) { this.turtleTog += dt; k.jump = (this.turtleTog % 0.4) < 0.08; k.throttle = 0; k.steer = 0; return; }
       this.recover(M); return;
@@ -454,6 +496,9 @@ class Bot {
       const bd = Math.hypot(s.x - c.p.x, s.z - c.p.z);
       localDir(c, ic.bx, ic.by, ic.bz, _vl);
       const facing = Math.abs(Math.atan2(-_vl.x, _vl.z));
+      // charged shot: wind up over the last stretch before a shot on goal (never on clearances); the charge
+      // carries into a dive or jump shot started below, and the steer at contact decides the curve
+      if (this.chargePlan && !this.clearing && tRel > 0 && tRel < CHARGE_T + 0.3 && facing < 0.7) k.charge = true;
       if (ic.by < 2.1) {
         if (this.dodgePlan && tRel < 0.3 && tRel > 0.04 && facing < 0.45 && Math.abs(_vl.x) < 1.1 && _vl.z > 0 && bd < 4.5 + c.v.length() * 0.12) { this.man = new DodgeMan({ hold: 0.04, wait: Math.max(0.02, tRel - 0.16), aimBall: true }); return; }
       } else if (L.jumpShot > 0 && ic.by < 4.2 && facing < 0.5) {
@@ -508,15 +553,56 @@ class Bot {
   }
 }
 
-// ----------------------------------------------------------- team coach (roles for rotating bots)
+// ----------------------------------------------------------- team coach: duties (striker vs goalie/sweeper) + roles
+// Duties give each team a shape: the deepest penguin keeps goal (in 4+ a side the next one sweeps) and everyone else
+// is a striker; a lone penguin is 'flex'. Duties are dealt at kickoff and only swap with hysteresis, and humans are
+// slotted in by where they actually are. Each coach tick the best-placed striker gets 'attack' and the other strikers
+// hold the flanks or support, so a team never piles into one corner. Runs at 10 Hz without allocating.
+const DUTY_GAP = 2.5, DUTY_SWAP = 14, _team = [], _ord = [];
+const inCorner = (b) => Math.abs(b.x) > A.hx - 11 && Math.abs(b.z) > A.hz - 16;
+const dutyDepth = (c, own) => (c.demolished ? 0 : Math.abs(c.p.z - own));   // respawning penguins come back at their own goal
+// the holder of `job` got dragged up-field while a teammate sits much deeper: they swap jobs
+function dutySwap(M, team, own, job) {
+  let keep = null;
+  for (const c of _team) if (c.duty === job) { keep = c; break; }
+  if (!keep) return false;
+  let deep = null, dd = dutyDepth(keep, own) - DUTY_SWAP;
+  for (const c of _team) {
+    if (c === keep || c.demolished || (job === 'sweeper' && c.duty === 'goalie')) continue;
+    const d = dutyDepth(c, own); if (d < dd) { dd = d; deep = c; }
+  }
+  if (!deep) return false;
+  keep.duty = deep.duty; deep.duty = job; M.dutyT[team] = M.t;
+  return true;
+}
+function assignDuties(M, team, own) {
+  const n = _team.length;
+  let fresh = false;
+  for (const c of _team) if (!c.duty || c.duty === 'flex') { fresh = true; break; }
+  if (fresh) {
+    _ord.length = 0;   // deepest first (insertion sort into a reused array)
+    for (const c of _team) { let i = _ord.length; _ord.push(c); while (i > 0 && dutyDepth(_ord[i - 1], own) > dutyDepth(c, own)) { _ord[i] = _ord[i - 1]; i--; } _ord[i] = c; }
+    for (let i = 0; i < n; i++) _ord[i].duty = i === 0 ? 'goalie' : i === 1 && n >= 4 ? 'sweeper' : 'striker';
+    M.dutyT[team] = M.t;
+    return;
+  }
+  if (M.t - M.dutyT[team] < DUTY_GAP) return;
+  if (!dutySwap(M, team, own, 'goalie') && n >= 4) dutySwap(M, team, own, 'sweeper');
+}
 function coachUpdate(M) {
-  for (const team of [0, 1]) {
-    const mem = M.cars.filter((c) => c.team === team && !c.demolished);
-    if (!mem.length) continue;
+  for (let team = 0; team < 2; team++) {
+    _team.length = 0;
+    for (const c of M.cars) if (c.team === team) _team.push(c);
+    const n = _team.length;
+    if (!n) continue;
+    const own = team === 0 ? -A.hz : A.hz;
+    if (n === 1) _team[0].duty = 'flex'; else assignDuties(M, team, own);
     const pk = M.teamLevel[team] || 'normal';
     const b = sliceAt(M.preds[pk], M.t + 0.5) || M.ball.p;
-    let best = null, bestS = 1e9;
-    for (const c of mem) {
+    // lead striker: the best-placed attacker; the sweeper only steps up if every striker is respawning
+    let best = null, bestS = 1e9, alt = null, altS = 1e9;
+    for (const c of _team) {
+      if (c.demolished) continue;
       const dx = b.x - c.p.x, dz = b.z - c.p.z, d = Math.hypot(dx, dz) || 1;
       const toward = (c.v.x * dx + c.v.z * dz) / d;
       let s = d / Math.max(10, 10 + toward * 0.5);
@@ -528,16 +614,18 @@ function coachUpdate(M) {
       if (c === M.coach[team]) s -= 0.35;
       if (!c.onGround && c.p.y > 3 && !(c.bot && c.bot.man)) s += 0.5;
       c._cs = s;
-      if (s < bestS) { bestS = s; best = c; }
+      if (c.duty === 'striker' || c.duty === 'flex') { if (s < bestS) { bestS = s; best = c; } }
+      else if (c.duty === 'sweeper' && s < altS) { altS = s; alt = c; }
     }
+    if (!best) best = alt;
     M.coach[team] = best;
-    best.role = 'attack';
-    const others = mem.filter((c) => c !== best).sort((a, b2) => a._cs - b2._cs);
     let wing = 0;
-    others.forEach((c, i) => {
-      if (i === 0) c.role = mem.length === 2 ? 'support' : 'support';
-      else if (i === 1) c.role = 'defend';
-      else { c.role = 'wing'; c.wingIndex = wing++; }
-    });
+    for (const c of _team) {
+      if (c === best) c.role = 'attack';
+      else if (c.duty === 'goalie') c.role = n >= 4 ? 'defend' : 'keeper';
+      else if (c.duty === 'sweeper') c.role = 'sweep';
+      else if (n >= 4) { c.role = 'wing'; c.wingIndex = wing++; }
+      else c.role = 'support';
+    }
   }
 }

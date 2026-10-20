@@ -178,6 +178,13 @@ const Sfx = (() => {
     voice({ type: 'sawtooth', f, dur: step * 1.15, vol: v, delay: d + i * step, vib: [6.5, f * 0.014], filt: ['bandpass', 1300, 1.6], atk: 0.015, hold: step * 0.55 });
   });
   const wood = (f, d = 0, v = 0.24) => { voice({ f, dur: 0.13, vol: v, delay: d, atk: 0.002 }); voice({ f: f * 3.93, dur: 0.05, vol: v * 0.4, delay: d, atk: 0.002 }); };
+  // stadium air horn: a fat, detuned brass chord with a breathy attack and a slight pitch sag
+  const horn = () => {
+    for (const [f, v] of [[155.6, 0.1], [196, 0.085], [233.1, 0.075], [77.8, 0.07]]) {
+      for (const dt of [-8, 8]) voice({ type: 'sawtooth', f, path: [[0.1, f * 1.025], [2, f * 0.985]], dur: 2.2, vol: v * 0.7, detune: dt, filt: ['lowpass', 1500, 0.9, 850], atk: 0.07, hold: 1.55, vib: [5.5, f * 0.006] });
+    }
+    noise(0.3, 0.12, 900, 'bandpass', 0.8);
+  };
   return {
     init,
     setVolume(v) { if (master) master.gain.value = v; },
@@ -197,13 +204,26 @@ const Sfx = (() => {
       if (big) { bubble(240, 0, 0.16); bubble(320, 0.07, 0.16); bubble(400, 0.14, 0.16); voice({ type: 'triangle', f: 150, path: [[0.08, 215], [0.22, 110]], dur: 0.24, vol: 0.13, delay: 0.17 }); } // glug-glug-gulp
       else bubble(300 + Math.random() * 90, 0, 0.13);
     },
+    // ice crystal pad: glassy chimes over a cold whoosh, then a rising zip for the speed burst
+    crystal() {
+      [1568, 2093, 2637, 3136].forEach((f, i) => voice({ type: 'triangle', f, path: [[0.4, f * 0.98]], dur: 0.45, vol: 0.07, delay: i * 0.035, atk: 0.003 }));
+      noise(0.35, 0.1, 5000, 'highpass', 0.7, 0, 2500);
+      voice({ f: 520, path: [[0.3, 1500]], dur: 0.32, vol: 0.05, delay: 0.05 });
+    },
+    // charged shot: deep thump plus a bright zing that scales with the charge
+    power(k) {
+      voice({ type: 'square', f: 90, path: [[0.18, 45]], dur: 0.2, vol: 0.12 + 0.1 * k, filt: ['lowpass', 600, 1] });
+      noise(0.3, 0.12 + 0.12 * k, 1800, 'bandpass', 1.4, 0, 6000);
+      voice({ f: 700, path: [[0.22, 2200]], dur: 0.25, vol: 0.05 + 0.05 * k, delay: 0.02 });
+    },
+    chargeReady() { voice({ type: 'triangle', f: 1320, path: [[0.08, 1760]], dur: 0.12, vol: 0.05, atk: 0.003 }); },
     beep(go) {
       if (go) for (const dt of [0, 9]) voice({ type: 'sawtooth', f: 320, path: [[0.04, 470], [0.5, 445]], dur: 0.5, vol: 0.08, detune: dt, filt: ['bandpass', 1400, 3], atk: 0.01, hold: 0.28 }); // bike horn
       else wood(640);
     },
+    horn,
     goal() {
-      voice({ type: 'sawtooth', f: 98, dur: 1.7, vol: 0.16, filt: ['lowpass', 480, 1], atk: 0.08, hold: 1.0 });   // foghorn
-      voice({ type: 'sawtooth', f: 147, dur: 1.7, vol: 0.09, filt: ['lowpass', 520, 1], atk: 0.08, hold: 1.0 });
+      horn();
       kazoo([72, 72, 76, 79, 76, 79, 84], 0.12, 0.4, 0.08);
       squawk(1, 0.15); squawk(1.25, 0.55, 0.09); squawk(0.85, 0.95, 0.09);
       noise(2.8, 0.3, 750, 'bandpass', 0.4);

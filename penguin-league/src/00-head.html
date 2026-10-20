@@ -281,6 +281,22 @@ table.stats tr.me td{background:rgba(255,226,110,.55);font-weight:700}
 #boost svg{width:100%;height:100%;overflow:visible}
 #boost .num{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:clamp(28px,3.4vw,42px);color:var(--ink);line-height:.9;font-variant-numeric:tabular-nums;padding-top:.12em}
 #boost .num small{font-size:clamp(9px,.85vw,11px);letter-spacing:.12em;color:var(--muted);margin-top:2px}
+#boost svg{transition:filter .2s}
+#boost.burst svg{filter:drop-shadow(0 0 10px #5fe3ff) drop-shadow(0 0 4px #5fe3ff)}
+#boost.burst .num small{color:#1d9fe0}
+/* charged-shot meter: sits on top of the boost dial, fills while the charge key is held */
+#charge{position:absolute;right:calc(18px + env(safe-area-inset-right,0px));bottom:calc(30px + clamp(104px,12vw,150px) + env(safe-area-inset-bottom,0px));width:clamp(104px,12vw,150px);height:20px;border:3px solid var(--ink);border-radius:999px;background:#e6f6ff;overflow:hidden;box-shadow:0 3px 0 var(--ink);opacity:0;transition:opacity .15s}
+#charge.on{opacity:1}
+#charge i{position:absolute;inset:0;transform-origin:left center;transform:scaleX(0);background:linear-gradient(90deg,#c8f6ff,#5fdcff)}
+#charge.ready i{background:linear-gradient(90deg,#8fe6ff,#2fb8ff 65%,#8d5bff)}
+#charge.full{box-shadow:0 3px 0 var(--ink),0 0 14px #5fdcff}
+#charge b{position:absolute;inset:0;display:grid;place-items:center;font-size:11px;letter-spacing:.14em;color:var(--ink);font-weight:400}
+/* goal highlight letterbox */
+#cine{position:absolute;inset:0;pointer-events:none;z-index:8}
+#cine i{position:absolute;left:0;right:0;height:9vh;background:#0b0d1e;transition:transform .45s cubic-bezier(.2,.8,.2,1)}
+#cine i:first-child{top:0;transform:translateY(-100%)}
+#cine i:last-child{bottom:0;transform:translateY(100%);display:flex;align-items:center;justify-content:center;font-family:var(--font-display);font-style:normal;font-size:clamp(12px,1.5vw,17px);letter-spacing:.22em;color:#9fe6ff}
+#cine.on i{transform:none}
 #hud-left{position:absolute;left:calc(14px + env(safe-area-inset-left,0px));bottom:calc(16px + env(safe-area-inset-bottom,0px));display:flex;flex-direction:column;align-items:flex-start;gap:10px}
 .hud-chip{pointer-events:auto;font-family:var(--font-display);font-size:14px;background:linear-gradient(180deg,#fff,#d8f0ff);border:3px solid var(--ink);border-radius:12px;padding:5px 10px;box-shadow:0 3px 0 var(--ink),inset 0 -3px 0 rgba(79,169,230,.3);color:var(--ink)}
 .hud-chip[aria-pressed="true"]{background:linear-gradient(180deg,#fff6b8,#ffd84a 60%,#ffbb1f);box-shadow:0 3px 0 var(--ink),inset 0 -3px 0 rgba(222,132,0,.35)}
@@ -305,7 +321,9 @@ table.stats tr.me td{background:rgba(255,226,110,.55);font-weight:700}
 #t-jump{--c1:#c4f7a6;--c2:#4fc22b;right:calc(24px + env(safe-area-inset-right,0px));bottom:calc(150px + env(safe-area-inset-bottom,0px));width:84px;height:84px}
 #t-boost{--c1:#ffd09a;--c2:#ff7a10;right:calc(120px + env(safe-area-inset-right,0px));bottom:calc(60px + env(safe-area-inset-bottom,0px));width:84px;height:84px}
 #t-slide{--c1:#d4bfff;--c2:#7f4cf5;right:calc(130px + env(safe-area-inset-right,0px));bottom:calc(160px + env(safe-area-inset-bottom,0px));width:60px;height:60px;font-size:12px}
+#t-shot{--c1:#c8f6ff;--c2:#2fb8ff;right:calc(34px + env(safe-area-inset-right,0px));bottom:calc(254px + env(safe-area-inset-bottom,0px));width:64px;height:64px;font-size:13px}
 body.touch #boost{bottom:auto;top:calc(76px + env(safe-area-inset-top,0px));width:84px}
+body.touch #charge{bottom:auto;top:calc(172px + env(safe-area-inset-top,0px));width:84px}
 body.touch #hint{display:none}
 body.touch #hud-left{bottom:calc(192px + env(safe-area-inset-bottom,0px))}
 
@@ -361,6 +379,7 @@ body.touch #hud-left{bottom:calc(192px + env(safe-area-inset-bottom,0px))}
 </defs></svg>
 <div id="app">
   <canvas id="gl" tabindex="-1"></canvas>
+  <div id="cine" aria-hidden="true"><i></i><i>GOAL HIGHLIGHT · SLOW-MO</i></div>
   <div id="flash"></div>
   <div id="hud" hidden>
     <div id="speedlines"></div>
@@ -395,9 +414,10 @@ body.touch #hud-left{bottom:calc(192px + env(safe-area-inset-bottom,0px))}
       </svg>
       <div class="num"><span id="boost-num">33</span><small>BOOST</small></div>
     </div>
+    <div id="charge" aria-hidden="true"><i></i><b>POWER</b></div>
     <div id="hud-left">
       <button id="chip-ballcam" class="hud-chip" type="button" aria-pressed="true">BALL CAM ON · C</button>
-      <div id="hint"><kbd>W A S D</kbd> drive &nbsp;<kbd>Space</kbd> jump/dive &nbsp;<kbd>Shift</kbd> boost<br><kbd>X</kbd> powerslide &nbsp;<kbd>C</kbd> ball cam &nbsp;<kbd>Esc</kbd> pause</div>
+      <div id="hint"><kbd>W A S D</kbd> drive &nbsp;<kbd>Space</kbd> jump/dive &nbsp;<kbd>Shift</kbd> boost<br><kbd>F</kbd> hold for a charged shot &nbsp;<kbd>X</kbd> powerslide &nbsp;<kbd>C</kbd> ball cam &nbsp;<kbd>Esc</kbd> pause</div>
     </div>
     <button id="btn-pause" type="button" aria-label="Pause"></button>
     <div id="touch" hidden>
@@ -405,6 +425,7 @@ body.touch #hud-left{bottom:calc(192px + env(safe-area-inset-bottom,0px))}
       <div class="tbtn" id="t-jump">JUMP</div>
       <div class="tbtn" id="t-boost">BOOST</div>
       <div class="tbtn" id="t-slide">SLIDE</div>
+      <div class="tbtn" id="t-shot">SHOT</div>
     </div>
   </div>
   <div id="menu">
