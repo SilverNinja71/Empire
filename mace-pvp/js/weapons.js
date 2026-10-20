@@ -294,7 +294,8 @@ export class ArrowManager {
         });
     }
 
-    update(platforms, fighters, onHitCallback = null) {
+    // onParryCallback(fighter, arrow) runs instead of a hit when the fighter's parry guard is up
+    update(platforms, fighters, onHitCallback = null, onParryCallback = null) {
         for (let i = this.arrows.length - 1; i >= 0; i--) {
             const a = this.arrows[i];
 
@@ -338,14 +339,24 @@ export class ArrowManager {
                     a.y >= f.y && a.y <= f.y + f.h &&
                     f.hitCooldown <= 0
                 ) {
+                    // Parried: the arrow is swatted away harmlessly
+                    if (f.parryWindow > 0 && onParryCallback) {
+                        onParryCallback(f, a);
+                        this.arrows.splice(i, 1);
+                        break;
+                    }
+
                     // Hit fighter! (stats count only the HP actually removed)
                     const dealt = Math.min(a.damage, Math.max(0, f.hp));
                     f.hp -= a.damage;
                     f.stats.damageTaken += dealt;
                     f.hitCooldown = 20;
                     f.stun = 25;
-                    f.xVel = a.facing * 7 * (a.knockbackMult || 1.0);
-                    f.yVel = -5;
+                    // Directional knockback along the arrow's flight, stronger for harder-hitting arrows
+                    const kScale = Math.max(0.85, Math.min(1.45, 0.85 + a.damage / 200));
+                    const dir = a.vx > 0 ? 1 : (a.vx < 0 ? -1 : a.facing);
+                    f.xVel = dir * 7 * (a.knockbackMult || 1.0) * kScale;
+                    f.yVel = -5 + Math.max(-2, Math.min(2.5, a.vy * 0.25));
 
                     const shooter = fighters.find(fl => fl.id === a.ownerId);
                     if (shooter) f.lastHitBy = shooter;

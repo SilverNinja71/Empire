@@ -26,6 +26,10 @@ export class BotAI {
         this.invisTimer = 0;
         this.sinceHit = 0;
         this.sizeTimer = 0;
+
+        // Pro / God: parry rolls (one per incoming dash) and weapon-swap checks
+        this.parryRolled = false;
+        this.swapTimer = 0;
     }
 
     setParams(params) {
@@ -45,12 +49,44 @@ export class BotAI {
         this.invisTimer = 0;
         this.sinceHit = 0;
         this.sizeTimer = 0;
+        this.parryRolled = false;
+        this.swapTimer = 0;
+    }
+
+    // How well a weapon suits the current spacing (higher is better)
+    weaponFit(weaponId, absDist, dy, above) {
+        switch (weaponId) {
+            case "mace":  return above && absDist < 160 ? 3.2 : (absDist < 110 ? 2.6 : 1);
+            case "spear": return absDist >= 110 && absDist < 300 ? 2.8 : (absDist < 110 ? 1.8 : 1.2);
+            case "sword": return absDist < 170 ? 2.7 : 1.3;
+            case "fists": return absDist < 60 ? 3 : 0.6;
+            case "bow":   return absDist > 240 && Math.abs(dy) < 60 ? 3.3 : (absDist > 180 ? 1.6 : 0.3);
+            default:      return 1;
+        }
+    }
+
+    // Swap to the other loadout weapon when it clearly suits the distance better
+    considerSwap(targetPlayer, distance) {
+        const bot = this.bot;
+        if (!bot.loadout || bot.loadout.length < 2 || bot.dashing || bot.slamming) return;
+        const absDist = Math.abs(distance);
+        const dy = targetPlayer.y - bot.y;
+        const above = bot.y < targetPlayer.y - 40;
+        const current = bot.loadout[bot.activeSlot];
+        const other = bot.loadout[1 - bot.activeSlot];
+        if (this.weaponFit(other, absDist, dy, above) > this.weaponFit(current, absDist, dy, above) + 0.5) {
+            bot.swapWeapon();
+        }
     }
 
     // Helper: Bot dash initiating
     startDash(attack, distanceToTarget) {
         const bot = this.bot;
         if (!bot.dashReady || bot.dashing || bot.dashCooldown > 0) {
+            return false;
+        }
+        // Hold a raised parry guard instead of dashing out of it (a dash would turn the parry into a clash)
+        if (bot.parryWindow > 0) {
             return false;
         }
 
@@ -132,6 +168,30 @@ export class BotAI {
                 bot.facing = distance > 0 ? 1 : -1;
             }
 
+            // ---------- Parry a dash aimed at the bot (pro / god) ----------
+            if (!targetPlayer.dashing) {
+                this.parryRolled = false;
+            } else if (
+                P.parryChance > 0 &&
+                !this.parryRolled &&
+                targetPlayer.dashAttack &&
+                Math.abs(distance) < 90 &&
+                Math.abs(targetPlayer.y - bot.y) < 40 &&
+                ((distance > 0 && targetPlayer.facing === -1) ||
+                 (distance < 0 && targetPlayer.facing === 1))
+            ) {
+                this.parryRolled = true; // one roll per incoming dash
+                if (bot.parryCooldown <= 0 && Math.random() * 100 < P.parryChance) {
+                    bot.parry();
+                }
+            }
+
+            // ---------- Swap weapons for the current distance (pro / god) ----------
+            if (P.weaponSwap > 0 && --this.swapTimer <= 0) {
+                this.swapTimer = 24;
+                this.considerSwap(targetPlayer, distance);
+            }
+
             // ---------- Dodge incoming slam ----------
             const slamThreat = targetPlayer.slamming &&
                                targetPlayer.y < bot.y &&
@@ -186,8 +246,20 @@ export class BotAI {
             }
 
             // ---------- Movement towards or away from player ----------
-            if ((this.dodging || this.runAway) && !bot.dashing) {
+            if (bot.parryWindow > 0 && !bot.dashing) {
+                bot.xVel *= 0.5; // plant the feet while the parry guard is up
+            } else if ((this.dodging || this.runAway) && !bot.dashing) {
                 bot.xVel = distance > 0 ? -P.runSpeed : P.runSpeed;
+            } else if (!bot.dashing && bot.weaponId === "bow" && P.weaponSwap > 0) {
+                // Archer spacing: hold about 230-300px away so arrows have room to fly
+                const absDist = Math.abs(distance);
+                if (absDist < 230) {
+                    bot.xVel = distance > 0 ? -P.speed : P.speed;
+                } else if (absDist > 300) {
+                    bot.xVel = distance > 0 ? P.speed : -P.speed;
+                } else {
+                    bot.xVel *= 0.6;
+                }
             } else if (!bot.dashing) {
                 if (Math.abs(distance) > 40) {
                     bot.xVel = distance > 0 ? P.speed : -P.speed;

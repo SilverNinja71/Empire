@@ -2228,6 +2228,7 @@ export class UIManager {
         bindButton("touch-jump", () => this.game.localAction("jump"), () => {});
         bindButton("touch-dash", () => this.game.localAttack(), () => {});
         bindButton("touch-slam", () => this.game.localAction("slam"), () => {});
+        bindButton("touch-parry", () => this.game.localAction("parry"), () => {});
         bindButton("touch-swap", () => this.game.localAction("swap"), () => {});
     }
 

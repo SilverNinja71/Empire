@@ -4,13 +4,118 @@
 // arrows, and weapon-specific damage & knockback
 // ==========================================
 
-import { CORE_PHYSICS, CLASSES } from './config.js';
+import { CORE_PHYSICS, CLASSES, PARRY_CONFIG } from './config.js';
 import { sound } from './audio.js';
 
 export class CombatEngine {
     constructor(particleManager) {
         this.particles = particleManager;
         this.bolts = []; // Lightning class bolts being drawn: { x, y, life }
+        this.onClash = null; // (kind: "parry" | "clash", x, y) => void, set by Game for hit-stop and online FX
+    }
+
+    // Knockback grows with damage: a 25-damage hit pushes about as hard as before, big slams much harder
+    knockScale(damage) {
+        return Math.max(0.85, Math.min(1.45, 0.85 + damage / 200));
+    }
+
+    // Parry: if the defender's guard is up, the hit is negated and the attacker is stunned
+    tryParry(attacker, defender) {
+        if (!(defender.parryWindow > 0) || defender.hp <= 0) return false;
+        this.resolveParry(attacker, defender, true);
+        return true;
+    }
+
+    // Two attack dashes meeting head-on
+    isHeadOnClash(attacker, defender) {
+        if (!defender.dashing || !defender.dashAttack || defender.hp <= 0) return false;
+        if (attacker.facing === defender.facing) return false;
+        const ac = attacker.x + attacker.w / 2;
+        const dc = defender.x + defender.w / 2;
+        return (ac <= dc && attacker.facing === 1) || (ac >= dc && attacker.facing === -1);
+    }
+
+    cancelActions(f) {
+        f.dashing = false;
+        f.dashAttack = false;
+        f.dashTimer = 0;
+        f.slamming = false;
+    }
+
+    // Shared by parries and clashes: no damage, both fighters knocked apart, metallic clang.
+    // On a parry the attacker is also stunned; on a clash both simply recover.
+    resolveParry(attacker, defender, isParry) {
+        const P = PARRY_CONFIG;
+        const ac = attacker.x + attacker.w / 2;
+        const dc = defender.x + defender.w / 2;
+        const away = ac < dc ? -1 : (ac > dc ? 1 : -defender.facing); // direction the attacker is pushed
+
+        this.cancelActions(attacker);
+        this.cancelActions(defender);
+
+        attacker.xVel = away * P.bounceX;
+        attacker.yVel = P.bounceY;
+        attacker.onGround = false;
+        defender.xVel = -away * P.bounceX;
+        defender.yVel = P.bounceY;
+        defender.onGround = false;
+
+        defender.parryWindow = 0;
+        defender.dashReady = true; // ready to punish
+        defender.dashCooldown = 0;
+        defender.hitCooldown = Math.max(defender.hitCooldown, P.safeFrames);
+
+        if (isParry) {
+            attacker.stun = Math.max(attacker.stun, P.attackerStun);
+        } else {
+            attacker.hitCooldown = Math.max(attacker.hitCooldown, P.safeFrames);
+            attacker.dashReady = true;
+            attacker.dashCooldown = 0;
+        }
+
+        attacker.squashX = 1.3;
+        attacker.squashY = 0.75;
+        defender.squashX = 1.3;
+        defender.squashY = 0.75;
+
+        const x = (ac + dc) / 2;
+        const y = (attacker.y + attacker.h / 2 + defender.y + defender.h / 2) / 2;
+        const kind = isParry ? "parry" : "clash";
+        this.playParryFX(kind, x, y);
+        if (this.onClash) this.onClash(kind, x, y);
+    }
+
+    // Parried arrow: knocked away harmlessly, the defender recoils a little and the shooter is stunned
+    parryArrow(defender, arrow, shooter) {
+        const P = PARRY_CONFIG;
+        const dir = arrow.vx > 0 ? 1 : (arrow.vx < 0 ? -1 : arrow.facing);
+
+        defender.parryWindow = 0;
+        defender.hitCooldown = Math.max(defender.hitCooldown, P.safeFrames);
+        defender.dashReady = true;
+        defender.dashCooldown = 0;
+        defender.xVel = dir * P.bounceX * 0.5;
+        defender.yVel = P.bounceY * 0.6;
+        defender.squashX = 1.25;
+        defender.squashY = 0.8;
+
+        if (shooter && shooter.hp > 0) {
+            shooter.stun = Math.max(shooter.stun, P.attackerStun);
+        }
+
+        this.playParryFX("parry", arrow.x, arrow.y);
+        if (this.onClash) this.onClash("parry", arrow.x, arrow.y);
+    }
+
+    // Visuals + sound for a parry or clash (also replayed on online guests)
+    playParryFX(kind, x, y) {
+        const isParry = kind === "parry";
+        sound.playParry(isParry ? 1 : 0.8);
+        this.particles.addShockwave(x, y, isParry ? 80 : 65, "rgba(255, 255, 255, 0.95)", isParry ? 5 : 4);
+        this.particles.addShockwave(x, y, isParry ? 45 : 35, isParry ? "rgba(170, 235, 255, 0.9)" : "rgba(255, 236, 160, 0.9)", 3);
+        this.particles.addHitSparks(x, y, isParry ? 20 : 16, "#ffffff");
+        this.particles.addFloatingText(x, y - 22, isParry ? "PARRY!" : "CLASH!", isParry ? "#ffffff" : "#fff1a8", true, 1.5);
+        this.particles.triggerShake(isParry ? 7 : 6, 10);
     }
 
     // Lightning class: mace slams add 18-22 extra stun frames, and 5% of slams call down a bolt (+20 damage)
@@ -98,6 +203,8 @@ export class CombatEngine {
             ab.y < defender.y + defender.h &&
             ab.y + ab.h > defender.y
         ) {
+            if (this.tryParry(attacker, defender)) return true;
+
             const heightDifference = defender.y - ab.y;
             let slamDamage = CORE_PHYSICS.slamMinDamage + heightDifference * slamScale;
             slamDamage = Math.max(CORE_PHYSICS.slamMinDamage, Math.min(slamMaxDmg, slamDamage));
@@ -118,8 +225,14 @@ export class CombatEngine {
             defender.dashing = false;
             defender.dashAttack = false;
 
-            defender.xVel = (attacker.x < defender.x) ? 7 : -7;
-            defender.yVel = -7;
+            // Directional knockback: off-centre slams push sideways, square hits pop the
+            // defender straight up; both grow with damage
+            const kScale = this.knockScale(finalDamage);
+            const offset = (defender.x + defender.w / 2) - (ab.x + ab.w / 2);
+            const side = offset !== 0 ? Math.sign(offset) : (attacker.xVel >= 0 ? 1 : -1);
+            const lateral = Math.min(1, Math.abs(offset) / 20);
+            defender.xVel = side * (4 + 3 * lateral) * kScale;
+            defender.yVel = -(6 + 1.5 * (1 - lateral)) * kScale;
 
             // Attacker bounces up into the air
             this.maceLaunch(attacker);
@@ -182,6 +295,8 @@ export class CombatEngine {
             defender.hp > 0 &&
             defender.hitCooldown <= 0
         ) {
+            if (this.tryParry(attacker, defender)) return true;
+
             const finalDamage = CORE_PHYSICS.slamGroundDamage * damageMultiplier;
             const dealt = this.applyDamage(attacker, defender, finalDamage);
             defender.hitCooldown = 20;
@@ -190,6 +305,12 @@ export class CombatEngine {
             defender.slamming = false;
             defender.dashing = false;
             defender.dashAttack = false;
+
+            // The shockwave throws the defender away from the impact point
+            const kScale = this.knockScale(finalDamage);
+            defender.xVel = (defenderCenter >= attackerCenter ? 1 : -1) * 5 * kScale;
+            defender.yVel = -4.5 * kScale;
+            defender.onGround = false;
 
             attacker.stats.damageDealt += dealt;
             // One slam that hits several enemies still counts as one landed slam
@@ -233,6 +354,13 @@ export class CombatEngine {
             ab.y < defender.y + defender.h &&
             ab.y + ab.h > defender.y
         ) {
+            // Head-on dashes clash; a raised guard parries
+            if (this.isHeadOnClash(attacker, defender)) {
+                this.resolveParry(attacker, defender, false);
+                return true;
+            }
+            if (this.tryParry(attacker, defender)) return true;
+
             const finalDamage = baseDmg * damageMultiplier;
             const dealt = this.applyDamage(attacker, defender, finalDamage);
             defender.hitCooldown = 22;
@@ -242,8 +370,12 @@ export class CombatEngine {
             defender.dashing = false;
             defender.dashAttack = false;
 
-            defender.xVel = attacker.facing * 7 * knockMult;
-            defender.yVel = -7;
+            // Directional knockback along the dash, stronger for heavier hits;
+            // hits from below launch higher, hits from above stay flatter
+            const kScale = this.knockScale(finalDamage);
+            const rise = Math.max(-1, Math.min(1, ((attacker.y + attacker.h / 2) - (defender.y + defender.h / 2)) / 25));
+            defender.xVel = attacker.facing * 7 * knockMult * kScale;
+            defender.yVel = -(6.5 + 1.5 * rise) * Math.min(1.25, kScale);
 
             attacker.dashing = false;
             attacker.dashAttack = false;

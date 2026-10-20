@@ -3,7 +3,7 @@
 // Handles physics, weapons, skin customization, and multi-fighter combat
 // ==========================================
 
-import { CORE_PHYSICS, ARENA_CONFIG, CLASSES } from './config.js';
+import { CORE_PHYSICS, ARENA_CONFIG, CLASSES, PARRY_CONFIG } from './config.js';
 import { sound } from './audio.js';
 import { getComputedWeaponStats } from './weapons.js';
 
@@ -62,6 +62,11 @@ export class Fighter {
         this.hitCooldown = 0;
         this.stun = 0;
         this.isBotGame = false;
+
+        // Parry guard (F / Left Shift) and Wind Geyser re-launch timer
+        this.parryWindow = 0;
+        this.parryCooldown = 0;
+        this.geyserCd = 0;
 
         // Visual squash & stretch
         this.squashX = 1.0;
@@ -209,6 +214,9 @@ export class Fighter {
         this.ghostHp = maxHp;
         this.hitCooldown = 0;
         this.stun = 0;
+        this.parryWindow = 0;
+        this.parryCooldown = 0;
+        this.geyserCd = 0;
 
         this.squashX = 1.0;
         this.squashY = 1.0;
@@ -251,6 +259,9 @@ export class Fighter {
         this.dashReady = true;
         this.dashCooldown = 0;
         this.stun = 0;
+        this.parryWindow = 0;
+        this.parryCooldown = 0;
+        this.geyserCd = 0;
         this.hitCooldown = 60; // 1 second invulnerability
         this.isDead = false;
         this.squashX = 1.0;
@@ -403,6 +414,20 @@ export class Fighter {
         return true;
     }
 
+    // Parry: raise a short guard that negates the next slam, dash or arrow and stuns the attacker
+    parry() {
+        if (this.hp <= 0 || this.freezeT > 0 || this.stun > 0 || this.parryCooldown > 0) return false;
+
+        this.parryWindow = PARRY_CONFIG.window;
+        this.parryCooldown = PARRY_CONFIG.cooldown;
+
+        this.squashX = 1.15;
+        this.squashY = 0.88;
+
+        sound.playParryReady();
+        return true;
+    }
+
     // Platform one-way collision check
     checkPlatformCollision(platforms, prevBottom) {
         this.onGround = false;
@@ -501,6 +526,9 @@ export class Fighter {
         }
 
         if (this.swapCooldown > 0) this.swapCooldown--;
+        if (this.parryWindow > 0) this.parryWindow--;
+        if (this.parryCooldown > 0) this.parryCooldown--;
+        if (this.geyserCd > 0) this.geyserCd--;
 
         this.updateClassAndStatus();
 
