@@ -17,6 +17,8 @@
         shakeT: 0,
         shakeAmp: 0,
         stopT: 0,
+        slowT: 0,
+        slowK: 1,
         flashT: 0,
         flashMax: 0,
         flashColor: "#ffffff",
@@ -33,7 +35,7 @@
         fx.banners.length = 0;
         fx.flyers.length = 0;
         fx.confettiParts.length = 0;
-        fx.shakeT = fx.stopT = fx.flashT = 0;
+        fx.shakeT = fx.stopT = fx.flashT = fx.slowT = 0;
     };
 
     // ---------- Particles ----------
@@ -92,6 +94,15 @@
     fx.stop = function (sec) {
         fx.stopT = Math.max(fx.stopT, sec);
     };
+    // Slow motion: the game runs at `k` speed for `sec` real seconds (eases back to full speed at the end)
+    fx.slowmo = function (sec, k) {
+        fx.slowT = Math.max(fx.slowT, sec);
+        fx.slowK = k;
+    };
+    fx.timeScale = function () {
+        if (fx.slowT <= 0) return 1;
+        return PL.lerp(1, fx.slowK, Math.min(1, fx.slowT / 0.15));
+    };
     fx.flash = function (color, alpha, time) {
         fx.flashColor = color;
         fx.flashAlpha = alpha;
@@ -138,6 +149,7 @@
         dt = Math.max(0, dt);
         fx.shakeT = Math.max(0, fx.shakeT - dt);
         fx.stopT = Math.max(0, fx.stopT - dt);
+        fx.slowT = Math.max(0, fx.slowT - dt);
         fx.flashT = Math.max(0, fx.flashT - dt);
         fx.coinBump = Math.max(0, fx.coinBump - dt);
         for (const p of fx.parts) {

@@ -458,6 +458,32 @@
         skua: { kind: "skua" }
     };
 
+    // Lunge warning: a red ring flashing around the predator's head while it winds up.
+    // k runs 0..1 over the wind-up; the ring tightens and flashes faster as the lunge gets close.
+    PL.drawLungeRing = function (ctx, x, y, r, k, t) {
+        const flash = Math.floor(t * (10 + k * 14)) % 2 === 0;
+        const rr = r * (1.45 - k * 0.45);
+        ctx.save();
+        ctx.lineWidth = 5 + k * 3;
+        ctx.strokeStyle = flash ? "#ff1744" : "#ffcdd2";
+        ctx.globalAlpha = 0.55 + k * 0.45;
+        ctx.beginPath();
+        ctx.arc(x, y, rr, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.lineWidth = 2;
+        ctx.globalAlpha = 0.35 * (1 - k);
+        ctx.beginPath();
+        ctx.arc(x, y, rr * 1.35, 0, Math.PI * 2);
+        ctx.stroke();
+        // "!" over the ring
+        ctx.globalAlpha = 1;
+        ctx.fillStyle = flash ? "#ff1744" : "#ffffff";
+        PL.roundRect(ctx, x - 5, y - rr - 34, 10, 20, 4);
+        ctx.fill();
+        PL.circ(ctx, x, y - rr - 8, 5);
+        ctx.restore();
+    };
+
     // (x, y) is the ground under the chaser; it runs to the right
     PL.drawLandPredator = function (ctx, type, x, y, s, t, close) {
         const Q = LAND[type] || LAND.wolf;

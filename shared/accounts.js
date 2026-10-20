@@ -8,6 +8,11 @@
 // neither game has to know about the others.
 //
 // A transfer code moves an account to another computer or browser.
+//
+// Trophies (GameAccounts.trophies) are milestones from any game on the site,
+// worked out from that same shared profile: reach Gold tier in Spear-Mace PVP
+// or beat a champion in Penguin Life and you unlock a badge and a title that
+// every game can show. They're kept per player in "spear_mace_trophies".
 // ==========================================
 (function () {
     "use strict";
@@ -271,6 +276,190 @@
             return { ok: true, username: data.username };
         }
     };
+
+    // ==========================================
+    // Cross-game trophies
+    // ==========================================
+    const TROPHY_KEY = "spear_mace_trophies";
+    const life = (p) => p.penguinLife || {};
+    const lifeRecord = (p) => life(p).record || {};
+    const RP = (p) => Number(p.arenaRP) || 0;
+    const WORLD_FINALS = 5; // Iceland, Greenland, Siberia, Australia, Antarctica (PL.FINALS)
+    // game: "mace" (Spear-Mace PVP), "life" (Penguin Life) or "all"
+    const TROPHIES = [
+        { id: "mace_silver", game: "mace", name: "Silver Duelist", desc: "Reach Silver tier in Spear-Mace PVP", color: "#cfd8dc", test: (p) => RP(p) >= 500 },
+        { id: "mace_gold", game: "mace", name: "Gold Gladiator", desc: "Reach Gold tier in Spear-Mace PVP", color: "#ffca28", test: (p) => RP(p) >= 1000 },
+        { id: "mace_diamond", game: "mace", name: "Diamond Warlord", desc: "Reach Diamond tier in Spear-Mace PVP", color: "#4dd0e1", test: (p) => RP(p) >= 1500 },
+        { id: "mace_obsidian", game: "mace", name: "Obsidian Legend", desc: "Reach Obsidian tier in Spear-Mace PVP", color: "#9575cd", test: (p) => RP(p) >= 2000 },
+        { id: "mace_streak", game: "mace", name: "Unstoppable", desc: "Win 5 duels in a row in Spear-Mace PVP", color: "#ff7043", test: (p) => ((p.stats && Number(p.stats.bestStreak)) || 0) >= 5 },
+        { id: "pl_racer", game: "life", name: "Race Winner", desc: "Win a race in Penguin Life", color: "#66bb6a", test: (p) => (Number(lifeRecord(p).battlesWon) || 0) >= 1 },
+        { id: "pl_champion", game: "life", name: "Champion Slayer", desc: "Beat a world champion in Penguin Life", color: "#ffa726", test: (p) => (life(p).finalsBeaten || []).length >= 1 },
+        { id: "pl_world", game: "life", name: "World Champion", desc: "Beat every world champion in Penguin Life", color: "#ffd54f", test: (p) => (life(p).finalsBeaten || []).length >= WORLD_FINALS },
+        { id: "pl_santa", game: "life", name: "Santa's Rival", desc: "Out-race Santa at the North Pole in Penguin Life", color: "#ef5350", test: (p) => !!life(p).santaBeaten },
+        { id: "pl_dodger", game: "life", name: "Untouchable", desc: "Pull off 10 Perfect Dodges in Penguin Life", color: "#fff176", test: (p) => (Number(lifeRecord(p).perfectDodges) || 0) >= 10 },
+        { id: "pl_frost", game: "life", name: "Frost Fisher", desc: "Catch 3 Frost Fish in a Penguin Life blizzard", color: "#81d4fa", test: (p) => (Number(lifeRecord(p).frostFish) || 0) >= 3 },
+        { id: "two_worlds", game: "all", name: "Two-Game Hero", desc: "Earn a trophy in both Spear-Mace PVP and Penguin Life", color: "#f06292", test: (p, has) => has("mace") && has("life") }
+    ];
+    const TROPHY_BY_ID = {};
+    TROPHIES.forEach((t) => { TROPHY_BY_ID[t.id] = t; });
+
+    // Whose trophies these are: the logged-in account, or the guest profile being played
+    function trophyOwner() {
+        const s = load();
+        if (s.active && s.accounts[s.active]) return "acct:" + s.active;
+        const p = readJSON(PROFILE_KEY);
+        return p && p.id ? "guest:" + p.id : null;
+    }
+    function loadTrophies() {
+        const t = readJSON(TROPHY_KEY);
+        return t && t.players ? t : { v: 1, players: {} };
+    }
+    function trophySlot(store, owner) {
+        if (!store.players[owner]) store.players[owner] = { earned: {}, title: null };
+        return store.players[owner];
+    }
+    const publicTrophy = (t, when) => ({ id: t.id, game: t.game, name: t.name, title: t.name, desc: t.desc, color: t.color, earned: when || 0 });
+
+    // A small medal (SVG markup) in the trophy's color; dim when not earned yet
+    function medalSVG(t, size, dim) {
+        const c = dim ? "#5b6478" : t.color;
+        return '<svg width="' + size + '" height="' + size + '" viewBox="0 0 32 32" aria-hidden="true" style="vertical-align:middle;flex:none">' +
+            '<path d="M9 2h6l3 9h-6zM23 2h-6l-3 9h6z" fill="' + (dim ? "#3d4558" : "#e53935") + '" stroke="#2a1c12" stroke-width="1.5" stroke-linejoin="round"/>' +
+            '<circle cx="16" cy="20" r="10" fill="' + c + '" stroke="#2a1c12" stroke-width="2"/>' +
+            '<path d="M16 14.5l1.7 3.5 3.8.5-2.8 2.6.7 3.8-3.4-1.8-3.4 1.8.7-3.8-2.8-2.6 3.8-.5z" fill="' + (dim ? "#7a849a" : "#fff8e1") + '" stroke="#2a1c12" stroke-width="1" stroke-linejoin="round"/></svg>';
+    }
+    function escHTML(text) {
+        return String(text).replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[ch]));
+    }
+
+    // ---------- Unlock toasts (work on any page that loads this file) ----------
+    const toastQueue = [];
+    let toastBusy = false;
+    function showNextToast() {
+        if (toastBusy || !toastQueue.length || !document.body) return;
+        toastBusy = true;
+        const t = toastQueue.shift();
+        const el = document.createElement("div");
+        el.setAttribute("role", "status");
+        el.style.cssText = "position:fixed;left:50%;top:14px;z-index:2147483000;display:flex;align-items:center;gap:12px;max-width:min(92vw,420px);" +
+            "padding:10px 16px 10px 12px;border-radius:14px;background:rgba(22,34,79,0.96);color:#f3f6ff;border:3px solid " + t.color + ";" +
+            "box-shadow:0 8px 26px rgba(0,0,0,0.45);font:600 15px/1.25 'Baloo 2','Trebuchet MS',sans-serif;pointer-events:none;" +
+            "transform:translate(-50%,-140%);transition:transform 0.35s cubic-bezier(.2,1.4,.4,1),opacity 0.35s;opacity:0";
+        el.innerHTML = medalSVG(t, 40) + '<div><div style="font-size:12px;letter-spacing:1px;color:' + t.color + '">TROPHY UNLOCKED</div>' +
+            '<div style="font-size:18px;font-weight:800">' + escHTML(t.name) + "</div>" +
+            '<div style="font-size:13px;color:#a8b4d8">' + escHTML(t.desc) + " · new title!</div></div>";
+        document.body.appendChild(el);
+        requestAnimationFrame(() => {
+            el.style.transform = "translate(-50%,0)";
+            el.style.opacity = "1";
+        });
+        setTimeout(() => {
+            el.style.transform = "translate(-50%,-140%)";
+            el.style.opacity = "0";
+            setTimeout(() => {
+                el.remove();
+                toastBusy = false;
+                showNextToast();
+            }, 400);
+        }, 3600);
+    }
+
+    API.trophies = {
+        // Every trophy: { id, game, name, title, desc, color }
+        catalog() {
+            return TROPHIES.map((t) => publicTrophy(t, 0));
+        },
+        // The trophies this player has, oldest first: { id, game, name, title, desc, color, earned }
+        earned() {
+            const owner = trophyOwner();
+            if (!owner) return [];
+            const slot = loadTrophies().players[owner];
+            if (!slot) return [];
+            return Object.keys(slot.earned)
+                .filter((id) => TROPHY_BY_ID[id])
+                .sort((a, b) => slot.earned[a] - slot.earned[b])
+                .map((id) => publicTrophy(TROPHY_BY_ID[id], slot.earned[id]));
+        },
+        has(id) {
+            const owner = trophyOwner();
+            const slot = owner && loadTrophies().players[owner];
+            return !!(slot && slot.earned[id]);
+        },
+        // Look at the shared profile and award anything new. Returns the new trophies
+        // (and shows a toast for each unless opts.quiet). Safe to call any time.
+        check(opts) {
+            const owner = trophyOwner();
+            const p = readJSON(PROFILE_KEY);
+            if (!owner || !p) return [];
+            const store = loadTrophies();
+            const slot = trophySlot(store, owner);
+            const fresh = [];
+            const hasGame = (game) => TROPHIES.some((t) => t.game === game && slot.earned[t.id]);
+            const now = Date.now();
+            // Two passes so trophies that need other trophies ("all") see this round's
+            for (let pass = 0; pass < 2; pass++) {
+                for (const t of TROPHIES) {
+                    if (slot.earned[t.id]) continue;
+                    let ok = false;
+                    try { ok = !!t.test(p, hasGame); } catch (e) { ok = false; }
+                    if (!ok) continue;
+                    slot.earned[t.id] = now + fresh.length; // keeps the unlock order
+                    fresh.push(publicTrophy(t, slot.earned[t.id]));
+                }
+            }
+            if (!fresh.length) return fresh;
+            try { localStorage.setItem(TROPHY_KEY, JSON.stringify(store)); } catch (e) { return []; }
+            if (!(opts && opts.quiet)) {
+                fresh.forEach((t) => toastQueue.push(t));
+                showNextToast();
+                try { if (window.PL && window.PL.sfx) window.PL.sfx("trophy"); } catch (e) { /* no sound */ }
+            }
+            try { window.dispatchEvent(new CustomEvent("gametrophies", { detail: fresh })); } catch (e) { /* old browser */ }
+            return fresh;
+        },
+        // The title the player is wearing (a trophy's name), or null
+        title() {
+            const owner = trophyOwner();
+            const slot = owner && loadTrophies().players[owner];
+            if (!slot || !slot.title || !slot.earned[slot.title] || !TROPHY_BY_ID[slot.title]) return null;
+            return publicTrophy(TROPHY_BY_ID[slot.title], slot.earned[slot.title]);
+        },
+        // Wear an earned trophy's title (null takes it off). Returns true if it worked.
+        equip(id) {
+            const owner = trophyOwner();
+            if (!owner) return false;
+            const store = loadTrophies();
+            const slot = trophySlot(store, owner);
+            if (id && !slot.earned[id]) return false;
+            slot.title = id || null;
+            try { localStorage.setItem(TROPHY_KEY, JSON.stringify(store)); } catch (e) { return false; }
+            try { window.dispatchEvent(new CustomEvent("gametrophies", { detail: [] })); } catch (e) { /* old browser */ }
+            return true;
+        },
+        // Medal badge markup for a trophy id (dim: not earned yet)
+        badgeHTML(id, size, dim) {
+            const t = TROPHY_BY_ID[id];
+            return t ? medalSVG(t, size || 24, !!dim) : "";
+        }
+    };
+
+    // Check on load, whenever another tab changes the profile, and every few seconds
+    // (so a Gold tier reached in Spear-Mace PVP shows up without touching that game's code)
+    function autoCheck() {
+        if (document.visibilityState === "hidden") return;
+        try { API.trophies.check(); } catch (e) { /* storage blocked */ }
+    }
+    if (typeof window.addEventListener === "function") {
+        window.addEventListener("storage", (e) => {
+            if (e.key === PROFILE_KEY || e.key === ACCOUNTS_KEY) setTimeout(autoCheck, 300);
+        });
+        const start = () => {
+            setTimeout(autoCheck, 1500);
+            setInterval(autoCheck, 5000);
+        };
+        if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", start);
+        else start();
+    }
 
     window.GameAccounts = API;
 })();

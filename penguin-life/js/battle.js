@@ -335,6 +335,11 @@
             this.camY = PL.lerp(this.camY, pos.y - lift - 360, Math.min(1, dt * 4));
 
             this.callOvertakes(dt);
+            // Blizzard races are slicker on the slides: say so once the race is going
+            if (!this.weatherShown && this.mood === "blizzard" && this.t > 1.2) {
+                this.weatherShown = true;
+                PL.fx.banner("BLIZZARD!", "#e1f5fe", "Slides +20% for everyone");
+            }
             if (!this.finalShown && !this.me.out && this.me.seg === this.course.segs.length - 1) {
                 this.finalShown = true;
                 PL.fx.banner("FINAL STRETCH!", "#ffca28");
@@ -765,6 +770,8 @@
                 r.entryAirH = 0;
                 r.slideP = PL.slideParams(r.lv.slide);
                 r.slideP.maxS = 780 + r.lv.slide * 12;
+                // Blizzard: fresh powder makes every racer's slide 20% slicker
+                if (this.mood === "blizzard" && PL.slickSlide) PL.slickSlide(r.slideP, PL.WEATHER_FX.blizzard.slide);
             }
             const B = r.sb;
             const next = this.course.segs[r.seg + 1];

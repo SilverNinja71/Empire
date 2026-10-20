@@ -352,6 +352,8 @@
             ups = PL.account.addXp(pl, res.stat, res.xp);
             stamUps = PL.account.addXp(pl, "stamina", res.staminaXp);
             pl.record.trainings++;
+            pl.record.perfectDodges = (pl.record.perfectDodges || 0) + res.perfectDodges;
+            pl.record.frostFish = (pl.record.frostFish || 0) + res.frostFish;
             best = PL.progress.recordBest(pl, res.stat, res.value);
             pl.bestCombo = Math.max(pl.bestCombo || 0, res.bestCombo);
             missions = PL.progress.report(p, pl, { type: "training", stat: res.stat, value: res.value, combo: res.bestCombo, coins: res.coins, stars });
@@ -385,8 +387,11 @@
             '<div class="loot">' +
             "<div>" + PL.icon("coin", 26) + ' <b id="coin-up">0</b><small>coins</small></div>' +
             "<div><b>" + res.bestCombo + "</b><small>best combo</small></div>" +
+            (res.perfectDodges ? "<div><b>" + res.perfectDodges + "</b><small>perfect dodges</small></div>" : "") +
+            (res.frostFish ? "<div><b>" + res.frostFish + "</b><small>frost fish</small></div>" : "") +
             (starBonus ? "<div><b>+" + starBonus + "</b><small>star bonus</small></div>" : "") +
             "</div>" +
+            (res.weatherXp > 1 ? '<p class="weather-bonus">' + PL.icon("star", 18) + " " + esc(PL.MOOD_NAMES[res.weather] || "Weather") + " bonus: x" + res.weatherXp + " XP</p>" : "") +
             '<div class="xp-row"><span>' + skill.name + "</span><b>+" + res.xp + " XP</b><span>Lv " + before.lv + " → <b>" + st.lv + "</b></span></div>" +
             '<div class="xp-bar"><i id="xp-fill" style="width:' + (fromFrac * 100).toFixed(0) + "%;background:" + skill.color + '"></i></div>' +
             '<div class="xp-row"><span>Stamina</span><b>+' + res.staminaXp + " XP</b><span>Lv <b>" + pl.stats.stamina.lv + "</b>" + (stamUps ? " (up!)" : "") + "</span></div>" +
@@ -396,6 +401,7 @@
         );
         animateResults(res.coins + starBonus, fromFrac, toFrac, ups > 0);
         if (missions.length) setTimeout(() => PL.sfx("mission"), 900);
+        setTimeout(checkTrophies, 700);
         bind("#ok", () => goHome());
     }
 
@@ -431,6 +437,43 @@
                 }, 850);
             }
         }, 150);
+    }
+
+    // ---------- Trophies shared with the other games (shared/accounts.js) ----------
+    const trophyApi = () => window.GameAccounts && window.GameAccounts.trophies;
+    // The title you're wearing, cached for drawing (re-read whenever trophies change)
+    let wornTitle = null;
+    function refreshTitle() {
+        const T = trophyApi();
+        try { wornTitle = T ? T.title() : null; } catch (e) { wornTitle = null; }
+    }
+    window.addEventListener("gametrophies", refreshTitle);
+    window.addEventListener("storage", (e) => {
+        if (e.key === "spear_mace_trophies" || e.key === "spear_mace_accounts") refreshTitle();
+    });
+    refreshTitle();
+    // The worn title over your penguin on the home screen (a dark tag so it reads over the signs)
+    const TITLE_TAG = { size: 12, align: "center", color: "#fff", box: "rgba(42,28,18,0.82)", stroke: false };
+    function checkTrophies() {
+        const T = trophyApi();
+        if (!T) return;
+        try { T.check(); } catch (e) { /* storage blocked */ }
+    }
+    function trophyCaseHtml() {
+        const T = trophyApi();
+        if (!T) return "";
+        const got = {};
+        T.earned().forEach((t) => { got[t.id] = true; });
+        const all = T.catalog();
+        const worn = wornTitle && wornTitle.id;
+        const cells = all.map((t) => {
+            const on = !!got[t.id];
+            return '<button class="trophy' + (on ? " on" : "") + (worn === t.id ? " worn" : "") + '"' + (on ? ' data-trophy="' + t.id + '"' : " disabled") + ">" +
+                T.badgeHTML(t.id, 30, !on) + "<span>" + esc(t.name) + "</span><small>" + esc(t.desc) + "</small></button>";
+        }).join("");
+        return '<h3>' + PL.icon("trophy", 22) + " Trophies <small>" + Object.keys(got).length + " / " + all.length + "</small></h3>" +
+            '<p class="small">Earned here or in <a href="../mace-pvp/">Spear-Mace PVP</a>. Pick one you have to wear its title in every game.</p>' +
+            '<div class="trophies">' + cells + "</div>";
     }
 
     function missionsHtml(list) {
@@ -631,6 +674,7 @@
             PL.fx.banner("YOU WON!", "#ffca28");
         }
         if (missions.length) setTimeout(() => PL.sfx("mission"), 600);
+        setTimeout(checkTrophies, 700);
         const title = me.out ? PL.icon("zzz", 30) + " Out of stamina!" : won ? PL.icon("trophy", 30) + " You won!" : "You finished " + place + PL.nth(place);
         showModal(
             "<h2>" + title + "</h2>" +
@@ -872,12 +916,20 @@
         }).join("");
         showModal(
             '<h2 class="clickable" id="rename" title="Rename">' + esc(pl.name || "Your penguin") + " " + PL.icon("pencil", 24) + "</h2>" +
+            (wornTitle ? '<p class="worn-title">' + trophyApi().badgeHTML(wornTitle.id, 22) + " " + esc(wornTitle.title) + "</p>" : "") +
             '<canvas id="pv" width="160" height="150" class="preview"></canvas>' +
             '<div class="statlist">' + rows + "</div>" +
-            '<p class="small">Battles won: ' + pl.record.battlesWon + " / " + pl.record.battles + " · Trainings: " + pl.record.trainings + "</p>" +
+            '<p class="small">Battles won: ' + pl.record.battlesWon + " / " + pl.record.battles + " · Trainings: " + pl.record.trainings + " · Perfect dodges: " + (pl.record.perfectDodges || 0) + "</p>" +
             '<p class="small">Account: <b class="clickable" id="uname" title="Change username">' + esc(prof.username) + " " + PL.icon("pencil", 16) + "</b> · shared with <a href=\"../mace-pvp/\">Spear-Mace PVP</a></p>" +
-            '<div class="row"><button class="btn small" id="acct-open">' + (window.GameAccounts && window.GameAccounts.current() ? "Account settings" : "Make an account / Log in") + "</button></div>"
+            '<div class="row"><button class="btn small" id="acct-open">' + (window.GameAccounts && window.GameAccounts.current() ? "Account settings" : "Make an account / Log in") + "</button></div>" +
+            trophyCaseHtml()
         );
+        bind("[data-trophy]", (el) => {
+            const id = el.dataset.trophy;
+            trophyApi().equip(wornTitle && wornTitle.id === id ? null : id);
+            refreshTitle();
+            openStats();
+        });
         bind("#acct-open", () => openAccount());
         bind("#rename", () => askPenguinName(false));
         bind("#uname", () => {
@@ -1455,6 +1507,10 @@
         PL.ell(ctx, px, GY + 4, 26, 6);
         PL.drawPenguin(ctx, px, GY + (app.walking ? 0 : Math.sin(t * 3) * 0.6), 1.1, { look: PL.account.penguin().look, walk: app.walking, facing: app.facing, t, face: app.happyT > 0 ? "happy" : "normal", pose: app.happyT > 0 ? "cheer" : "stand" });
         PL.hudText(ctx, PL.account.penguin().name || "", px, GY - 90, { size: 14, align: "center" });
+        if (wornTitle) {
+            TITLE_TAG.color = wornTitle.color;
+            PL.hudText(ctx, wornTitle.title, px, GY - 112, TITLE_TAG);
+        }
 
         PL.drawWeather(ctx, mood, t, cx);
         const st = !app.modal && nearStation();
@@ -1533,7 +1589,7 @@
             PL.hudText(ctx, (isTouch() ? "Tap" : "Click or press SPACE") + " to play", W / 2, H - 46, { size: 24, align: "center", box: "#fff4dc", stroke: false, color: "#3b2a1e" });
         }
         const who = window.GameAccounts && window.GameAccounts.current();
-        PL.hudText(ctx, who ? "Playing as " + who.username : "Playing as a guest", 20, H - 22, { size: 15, color: "#fff8e1" });
+        PL.hudText(ctx, (who ? "Playing as " + who.username : "Playing as a guest") + (wornTitle ? " · " + wornTitle.title : ""), 20, H - 22, { size: 15, color: "#fff8e1" });
         if (PL.progress.dailyStatus(PL.account.cached().penguinLife).available) {
             PL.drawIcon(ctx, "chest", W - 150, H - 46, 34);
             PL.hudText(ctx, "Daily reward!", W - 128, H - 46, { size: 16, color: "#ffe082" });
@@ -1608,8 +1664,8 @@
         last = Math.max(last, now);
         app.t += realDt;
         PL.fx.update(realDt);
-        // Hit-stop: freeze the action for a split second on big hits
-        const dt = PL.fx.stopT > 0 ? 0 : realDt;
+        // Hit-stop: freeze the action for a split second on big hits; slow-mo (Perfect Dodge) scales it down
+        const dt = PL.fx.stopT > 0 ? 0 : realDt * PL.fx.timeScale();
         const off = PL.fx.offset();
         ctx.save();
         ctx.translate(off[0], off[1]);
