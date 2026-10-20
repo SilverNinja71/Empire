@@ -1,3 +1,4 @@
+<meta charset="utf-8">
 <title>Stone Court Battlegrounds</title>
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -137,6 +138,77 @@ button:focus-visible,input:focus-visible{outline:2px solid #fff;outline-offset:2
   #feed{display:none}
 }
 @media (prefers-reduced-motion:reduce){.ult.full i,.slot.flash{animation:none}}
+@media (max-width:460px){#room{top:calc(62px + env(safe-area-inset-top,0px))}}  /* narrow phones: keep the top-bar buttons tappable */
+
+/* hotbar is clickable / tappable: 1–4 moves and the AWAKEN bar */
+.slot,.ult{pointer-events:auto;cursor:pointer;touch-action:none;-webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent}
+.slot:hover{border-color:rgba(255,255,255,.42)}
+.ult.full:hover{filter:brightness(1.15)}
+
+/* top centre: Golden Lantern event chip + hard-lock target panel */
+#topc{position:absolute;left:50%;top:calc(10px + env(safe-area-inset-top,0px));transform:translateX(-50%);width:min(300px,calc(100vw - 24px));display:grid;grid-template-columns:minmax(0,1fr);gap:6px;justify-items:center}
+@media (max-width:1100px){#topc{top:calc(var(--roomB,84px) + 8px)}}
+@media (max-width:1100px) and (min-height:501px){#feed{top:calc(var(--roomB,84px) + 104px)}}
+@media (max-height:500px){body.touch #feed{display:none}}
+#evChip{display:inline-flex;align-items:center;gap:8px;max-width:100%;height:26px;padding:0 12px;border-radius:999px;font-size:11px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:#ffe7a3;white-space:nowrap}
+#evChip span{min-width:0;overflow:hidden;text-overflow:ellipsis}
+#evChip i{width:8px;height:8px;border-radius:50%;background:var(--ult-full);box-shadow:0 0 8px var(--ult-full)}
+#evChip.live{border-color:rgba(255,207,58,.75);color:#fff6cf;box-shadow:0 0 14px rgba(255,207,58,.35)}
+#evChip.live i{animation:pulse .6s ease-in-out infinite alternate}
+#lockHud{width:100%;border-radius:10px;padding:7px 9px 8px;display:grid;gap:5px;border-color:rgba(255,106,90,.55)}
+#lockHud .lh{display:flex;align-items:baseline;justify-content:space-between;gap:10px;min-width:0}
+#lockHud .lh span{font-size:13px;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#lockHud .lh small{font-size:11px;font-weight:700;color:var(--dim);white-space:nowrap}
+#lockHud .lh small.han{font-family:var(--brush);font-size:16px;font-weight:400;color:#fff}
+#lockHud .hp{height:18px}
+#lockHud .hp b{font-size:11px}
+#lockHud .tg{font-size:9px;letter-spacing:.22em;color:#ffb3a9}
+@media (max-height:500px){
+  #topc{width:min(250px,calc(100vw - 24px));gap:4px}
+  #evChip{height:22px;padding:0 10px;font-size:10px}
+  #lockHud{padding:4px 8px 5px;gap:3px}
+  #lockHud .lh span{font-size:12px}
+  #lockHud .hp{height:14px}
+  #lockHud .hp b{font-size:10px}
+}
+
+/* help panel swaps keyboard rows for touch rows on touch devices */
+#help .t-only{display:none}
+body.touch #help{display:block;top:calc(62px + env(safe-area-inset-top,0px));bottom:auto;max-height:calc(100vh - 80px);overflow:auto}
+body.touch #help .k-only{display:none}
+body.touch #help .t-only{display:flex}
+
+/* touch controls: floating stick bottom-left, action cluster bottom-right (portrait: above the hotbar) */
+body.touch{--k:1}
+@media (max-height:500px),(max-width:500px){body.touch{--k:.76}}
+#touch{position:absolute;inset:0;pointer-events:none}
+#stickZone{position:absolute;left:0;bottom:0;width:min(46vw,380px);height:min(58vh,400px);pointer-events:auto;touch-action:none}
+#stickBase{position:absolute;left:calc(max(10px,env(safe-area-inset-left,0px)) + 22px * var(--k));bottom:calc(max(10px,env(safe-area-inset-bottom,0px)) + 22px * var(--k));width:calc(136px * var(--k));height:calc(136px * var(--k));border-radius:50%;border:2px solid rgba(255,255,255,.3);background:radial-gradient(circle,rgba(17,19,23,.18) 0,rgba(17,19,23,.5) 70%);pointer-events:none}
+#stickBase.on{border-color:rgba(255,255,255,.65)}
+#stickKnob{position:absolute;left:50%;top:50%;width:calc(62px * var(--k));height:calc(62px * var(--k));margin:calc(-31px * var(--k)) 0 0 calc(-31px * var(--k));border-radius:50%;background:rgba(255,255,255,.86);box-shadow:0 2px 10px rgba(0,0,0,.45)}
+#tbtns{position:absolute;right:max(10px,env(safe-area-inset-right,0px));bottom:max(10px,env(safe-area-inset-bottom,0px));width:calc(246px * var(--k));height:calc(246px * var(--k));pointer-events:none}
+.tbtn{position:absolute;right:calc((var(--x) - var(--s) / 2) * var(--k) * 1px);bottom:calc((var(--y) - var(--s) / 2) * var(--k) * 1px);width:calc(var(--s) * var(--k) * 1px);height:calc(var(--s) * var(--k) * 1px);padding:0;border-radius:50%;border:2px solid rgba(255,255,255,.42);background:rgba(17,19,23,.58);color:#fff;font-weight:800;font-size:calc(11px * var(--k));letter-spacing:.06em;display:grid;place-items:center;pointer-events:auto;touch-action:none;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;-webkit-tap-highlight-color:transparent;cursor:pointer}
+.tbtn.on{background:rgba(255,255,255,.88);color:#111;border-color:#fff}
+.tb-m1{--x:58;--y:58;--s:86;font-size:calc(17px * var(--k));border-color:rgba(255,255,255,.6)}
+.tb-jump{--x:168;--y:48;--s:64}
+.tb-block{--x:134;--y:134;--s:58}
+.tb-dash{--x:56;--y:168;--s:62}
+.tb-grab{--x:218;--y:118;--s:50;font-size:calc(10px * var(--k))}
+.tb-lock{--x:120;--y:216;--s:48;font-size:calc(10px * var(--k))}
+.tb-lock.armed{border-color:#ff6a5a;color:#ffb3a9}
+body.touch .ult{height:24px}
+body.touch .ult b{font-size:11px}
+@media (orientation:portrait){
+  body.touch #stickZone{bottom:calc(var(--tsbTop,160px) + 4px)}
+  body.touch #tbtns{bottom:calc(var(--tsbTop,160px) + 8px)}
+}
+@media (orientation:landscape){body.touch #tsb{width:min(400px,calc(100vw - 492px * var(--k) - 40px))}}
+@media (orientation:landscape) and (max-height:500px){
+  body.touch .slot{height:52px}
+  body.touch .slot .t{font-size:16px}
+  body.touch .slot .n{font-size:8px}
+  body.touch .mini{height:36px}
+}
 </style>
 
 <canvas id="game" tabindex="0" aria-label="Arena view"></canvas>
@@ -184,27 +256,57 @@ button:focus-visible,input:focus-visible{outline:2px solid #fff;outline-offset:2
   <div id="banner"><small id="bannerS">Awakened</small><strong id="bannerT"></strong></div>
   <div id="cross"></div>
 
+  <div id="topc">
+    <div id="evChip" class="glass" hidden><i></i><span id="evTxt">Golden Lantern</span></div>
+    <div id="lockHud" class="glass" hidden>
+      <div class="lh"><span id="lockName">Target</span><small id="lockChar"></small></div>
+      <div class="hp"><i class="lag" id="lockLag"></i><i class="fill" id="lockFill"></i><b><span class="tg">◎ LOCKED</span><span id="lockTxt">100</span></b></div>
+    </div>
+  </div>
+
+  <div id="touch" hidden>
+    <div id="stickZone"><div id="stickBase" aria-hidden="true"><i id="stickKnob"></i></div></div>
+    <div id="tbtns">
+      <button type="button" class="tbtn tb-m1" data-act="m1" aria-label="Attack (M1)">M1</button>
+      <button type="button" class="tbtn tb-jump" data-act="jump" aria-label="Jump (Space)">JUMP</button>
+      <button type="button" class="tbtn tb-block" data-act="block" aria-label="Block (F)">BLOCK</button>
+      <button type="button" class="tbtn tb-dash" data-act="dash" aria-label="Dash (Q)">DASH</button>
+      <button type="button" class="tbtn tb-grab" data-act="grab" aria-label="Pick up or throw (R)">GRAB</button>
+      <button type="button" class="tbtn tb-lock" data-act="lock" aria-label="Lock on (Tab)">LOCK</button>
+    </div>
+  </div>
+
   <div id="tsb">
     <div class="r1">
       <div class="mini" id="qMini"><i class="cd"></i><span class="k">Q</span><span class="l">DASH</span><span class="t"></span></div>
       <div class="hp"><i class="lag" id="hpLag"></i><i class="fill" id="hpFill"></i><b><span class="nm" id="hpName">You</span><span id="hpTxt">100</span></b></div>
       <div class="mini" id="evMini"><i class="cd"></i><span class="k">Q</span><span class="l">EVASIVE</span><span class="t"></span></div>
     </div>
-    <div class="ult" id="ultBar"><i id="ultFill"></i><b>[G] AWAKEN</b><span id="ultPct">0%</span></div>
+    <div class="ult" id="ultBar" role="button" aria-label="Awaken (G)"><i id="ultFill"></i><b>[G] AWAKEN</b><span id="ultPct">0%</span></div>
     <div class="slots" id="slots"></div>
   </div>
 
   <div id="help" class="glass">
-    <h4>Controls · H to hide</h4>
-    <div class="r"><kbd>WASD / ←↑→↓</kbd>Move</div>
-    <div class="r"><kbd>Click</kbd>M1 (0.38s cadence)</div>
-    <div class="r"><kbd>Space + M1</kbd>Final hit: hold = uppercut, airborne = downslam</div>
-    <div class="r"><kbd>Q + dir</kbd>Dash: ↑ lunge-punch, ← → strafe, ↓ backflip</div>
-    <div class="r"><kbd>Q (stunned)</kbd>Evasive burst, 20s</div>
-    <div class="r"><kbd>F</kbd>Block (front, −75%)</div>
-    <div class="r"><kbd>1–4 · G</kbd>Moves · Awaken at 100%</div>
-    <div class="r"><kbd>R</kbd>Pick up / throw trash can</div>
-    <div class="r"><kbd>Shift</kbd>Shift-lock · right-drag camera</div>
+    <h4>Controls<span class="k-only"> · H to hide</span></h4>
+    <div class="r k-only"><kbd>WASD / ←↑→↓</kbd>Move</div>
+    <div class="r k-only"><kbd>Click</kbd>M1 (0.38s cadence)</div>
+    <div class="r k-only"><kbd>Space + M1</kbd>Final hit: hold = uppercut, airborne = downslam</div>
+    <div class="r k-only"><kbd>Q + dir</kbd>Dash: ↑ lunge-punch, ← → strafe, ↓ backflip</div>
+    <div class="r k-only"><kbd>Q (stunned)</kbd>Evasive burst, 20s</div>
+    <div class="r k-only"><kbd>F</kbd>Block (front, −75%)</div>
+    <div class="r k-only"><kbd>1–4 · G</kbd>Moves · Awaken at 100% (or click them)</div>
+    <div class="r k-only"><kbd>R</kbd>Pick up / throw trash can</div>
+    <div class="r k-only"><kbd>Shift</kbd>Shift-lock · right-drag camera</div>
+    <div class="r k-only"><kbd>Tab</kbd>Lock on (or middle-click)</div>
+    <div class="r t-only"><kbd>Left stick</kbd>Move</div>
+    <div class="r t-only"><kbd>Drag right</kbd>Turn camera · pinch to zoom</div>
+    <div class="r t-only"><kbd>M1</kbd>Attack (hold to chain) · hold JUMP for the uppercut</div>
+    <div class="r t-only"><kbd>DASH</kbd>Dash toward the stick · stunned = Evasive</div>
+    <div class="r t-only"><kbd>BLOCK · GRAB</kbd>Guard · pick up / throw a trash can</div>
+    <div class="r t-only"><kbd>LOCK</kbd>Lock on to the nearest fighter</div>
+    <div class="r t-only"><kbd>Tap 1–4</kbd>Moves · tap AWAKEN at 100%</div>
+    <div class="r"><kbd>Wall splat</kbd>Ragdoll into brick: +4, extra stun</div>
+    <div class="r"><kbd>Lantern</kbd>Every 60s · first to 20 dmg wins</div>
   </div>
 </div>
 
@@ -233,6 +335,10 @@ const tA = new V3(), tB = new V3(), tC = new V3();
 const SPEED = 1.4;      // whole-sim pace multiplier (40% faster than v1)
 const GRAV = 36, JUMP = 13, RUN = 10;
 const PLAZA = 34, WALL = 36, BOUND = 57;
+const LOCK = { range: 28, drop: 40, face: 14, yawBias: 5, shoulder: 1.5 };  // hard lock-on: acquire, auto-release, face-target, camera pull + offset
+const SPLAT = { speed: 12, dmg: 4, stun: 0.6, slide: 0.6 };                // ragdoll slammed into an arena brick wall
+const LANTERN = { every: 60, need: 20, ult: 35, heal: 25, drop: 22 };       // centre-plaza King-of-the-Hill event
+const DUMMY_HOME = new V3(5, 0, -7);                                        // training dummy stands clear of the lantern drop at (0, 0, 0)
 const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
 const fmt = (n) => (Math.abs(n - Math.round(n)) < 0.05 ? String(Math.round(n)) : n.toFixed(1));
 let realClock = 0, gameTime = 0;
@@ -364,6 +470,11 @@ const SFX = (() => {
     counter() { tn(1500, 0.08, { type: 'square', vol: 0.07 }); tn(2000, 0.12, { type: 'square', vol: 0.05, delay: 0.06 }); },
     ko() { tn(300, 0.9, { type: 'sawtooth', f2: 60, vol: 0.14 }); nz(0.8, { f: 800, f2: 100, vol: 0.4 }); },
     slide() { nz(0.8, { type: 'highpass', f: 3000, f2: 1500, vol: 0.12 }); },
+    splat() { nz(0.32, { f: 760, f2: 110, vol: 0.5 }); tn(92, 0.32, { f2: 36, vol: 0.55 }); nz(0.2, { type: 'highpass', f: 1900, vol: 0.22, delay: 0.035 }); },
+    gong() { [174, 261, 349, 523].forEach((fr, i) => tn(fr, 1.8 - i * 0.3, { type: i ? 'sine' : 'triangle', vol: 0.11 - i * 0.02 })); nz(0.5, { type: 'bandpass', f: 380, f2: 160, q: 1.2, vol: 0.14 }); },
+    lantern() { [988, 1319, 1661, 2217].forEach((fr, i) => tn(fr, 0.42, { type: 'triangle', vol: 0.07, delay: i * 0.06 })); nz(0.5, { type: 'highpass', f: 4200, vol: 0.12 }); },
+    lockOn() { tn(980, 0.05, { type: 'square', vol: 0.03 }); tn(1470, 0.09, { type: 'triangle', vol: 0.05, delay: 0.045 }); },
+    lockOff() { tn(1100, 0.07, { type: 'triangle', f2: 640, vol: 0.04 }); },
   };
 })();
 // every sound made by the local simulation is mirrored to peers
@@ -898,6 +1009,36 @@ function buildDummy(B) {
   return rig;
 }
 
+// Golden Lantern: supply-crate plinth, a slowly turning palace lantern and a light beam to the sky.
+// Shared materials/geometry so the 60 s respawns never allocate GPU resources.
+const lanternMat = {
+  gold: lam('#ffc53d', { emissive: '#9a5a00' }),
+  red: lam('#e0262f', { emissive: '#7a0c12' }),
+  paper: lam('#ffd979', { emissive: '#ff9a1f', emissiveIntensity: 0.85 }),
+  wood: lam('#8a5a2b'), woodDark: lam('#5e3a1a'),
+  beam: new THREE.MeshBasicMaterial({ color: '#ffd54a', transparent: true, opacity: 0.13, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide }),
+};
+const lanternBodyGeo = new THREE.CylinderGeometry(0.6, 0.6, 0.86, 8);
+const lanternCapGeo = new THREE.CylinderGeometry(0.44, 0.52, 0.16, 8);
+const lanternBeamGeo = new THREE.CylinderGeometry(0.5, 0.95, 44, 18, 1, true);
+function buildLantern(B) {
+  const M = lanternMat, rig = {};
+  rig.legL = piv(B); rig.legR = piv(B); rig.torso = piv(B);
+  rig.armL = piv(rig.torso); rig.armR = piv(rig.torso); rig.head = piv(rig.torso);
+  bx(B, 1.3, 0.5, 1.3, null, 0, 0.25, 0, M.wood);
+  for (const s of [-1, 1]) { bx(B, 0.1, 0.52, 1.34, null, s * 0.62, 0.26, 0, M.woodDark); bx(B, 1.34, 0.52, 0.1, null, 0, 0.26, s * 0.62, M.woodDark); }
+  bx(B, 1.38, 0.08, 1.38, null, 0, 0.53, 0, M.gold);
+  const G = rig.glow = piv(B, 0, 1.62, 0);
+  G.add(new THREE.Mesh(lanternBodyGeo, M.paper));
+  for (const y of [0.5, -0.5]) { const c = new THREE.Mesh(lanternCapGeo, M.red); c.position.y = y; if (y < 0) c.rotation.x = PI; G.add(c); }
+  for (let i = 0; i < 8; i++) { const a = (i / 8) * TAU; bx(G, 0.06, 0.88, 0.06, null, Math.sin(a) * 0.6, 0, Math.cos(a) * 0.6, M.gold); }
+  bx(G, 0.5, 0.1, 0.5, null, 0, 0.63, 0, M.gold); bx(G, 0.08, 0.34, 0.08, null, 0, 0.84, 0, M.gold);
+  bx(G, 0.16, 0.12, 0.16, null, 0, -0.66, 0, M.gold); bx(G, 0.1, 0.3, 0.1, null, 0, -0.87, 0, M.red);
+  const beam = rig.beam = new THREE.Mesh(lanternBeamGeo, M.beam);
+  beam.position.y = 22; beam.userData.noShadow = true; B.add(beam);
+  return rig;
+}
+
 // =====================================================================
 // fighters
 // =====================================================================
@@ -925,6 +1066,7 @@ function bestFront(f, range, arc = 0.3, dy = 2.2) {
   return best;
 }
 function nearestFoe(f, range) {
+  if (f === player) { const lk = lockedFoe(range); if (lk && canHit(lk)) return lk; }   // hard lock-on wins for the player's moves
   let best = null, bd = range;
   for (const o of foes(f)) { if (!canHit(o)) continue; const d = distH(f, o); if (d < bd) { bd = d; best = o; } }
   return best;
@@ -932,7 +1074,8 @@ function nearestFoe(f, range) {
 function foesNear(f, p, r, dy = 2.5) { return foes(f).filter((o) => canHit(o) && Math.hypot(o.pos.x - p.x, o.pos.z - p.z) < r && Math.abs(o.pos.y - p.y) < dy); }
 function aim(f, range) {
   let best = null, bs = 1e9;
-  const pref = f.ai && f.ai.target && !f.ai.target.dead && distH(f, f.ai.target) <= range ? f.ai.target : null;
+  const lk = f === player ? lockedFoe(range) : null;
+  const pref = lk || (f.ai && f.ai.target && !f.ai.target.dead && distH(f, f.ai.target) <= range ? f.ai.target : null);
   if (pref) best = pref;
   else {
     const fx = Math.sin(f.yaw), fz = Math.cos(f.yaw);
@@ -949,7 +1092,7 @@ function aim(f, range) {
 class Fighter {
   constructor(key, o = {}) {
     this.key = key; this.def = CHARS[key]; this.id = o.id || key; this.name = o.name || 'Player';
-    this.remote = !!o.remote; this.ai = o.ai || null; this.isDummy = key === 'dummy'; this.localKey = o.localKey || 'X';
+    this.remote = !!o.remote; this.ai = o.ai || null; this.isDummy = key === 'dummy'; this.lantern = key === 'lantern'; this.localKey = o.localKey || 'X';
     this.root = new THREE.Group();
     this.visual = piv(this.root, 0, 1, 0);
     this.body = piv(this.visual, 0, -1, 0);
@@ -962,7 +1105,7 @@ class Fighter {
     for (let i = 0; i < 3; i++) { const s = new THREE.Mesh(starGeo, pmat('#ffe04d')); s.position.set(Math.cos(i * TAU / 3) * 0.38, 0, Math.sin(i * TAU / 3) * 0.38); this.stars.add(s); }
     this.ice = new THREE.Mesh(boxG(1.35, 2.25, 1.35), new THREE.MeshLambertMaterial({ color: '#bdeeff', transparent: true, opacity: 0.45, emissive: '#1d4b66' }));
     this.ice.position.y = 1.1; this.ice.visible = false; this.root.add(this.ice);
-    this.root.traverse((m) => { if (m.isMesh && m !== this.shield && m !== this.ice) m.castShadow = true; });
+    this.root.traverse((m) => { if (m.isMesh && m !== this.shield && m !== this.ice && !m.userData.noShadow) m.castShadow = true; });
     scene.add(this.root);
     this.pos = this.root.position; this.vel = new V3(); this.yaw = 0; this.faceMode = 'move';
     this.V = { rx: 0, ry: 0, rz: 0, y: 1, sy: 1, sxz: 1 };
@@ -982,6 +1125,7 @@ class Fighter {
       tumble: 0, tumbleDir: 1, blockBreak: 0, iframes: 0, counter: 0, m1Lock: 0, comboIdx: 0, lastM1: -9, slowT: 0, frozen: 0,
       awaken: 0, action: null, anim: null, held: false, heldPose: null, blocking: false, dead: false, onGround: true, walk: 0,
       flinch: 0, bleed: null, maceArmed: 0, submerged: false, lastHurt: -9, shieldFlash: 0, wasRag: false, carry: null, spiked: false, respawnT: 0, netInv: false,
+      splatted: false, lastAtt: null,
     });
     this.inMove = new V3();
   }
@@ -1030,6 +1174,7 @@ function hit(att, tgt, dmg, o = {}) {
   if (tgt.remote) {
     if (tgt.netInv) return false;
     netSendHit(att, tgt, dmg, o);
+    if (tgt.lantern) { if (att === player && dmg > 0) KOTH.mine += dmg; return 'hit'; }   // the host tallies lantern damage
     if (att && !att.remote) {
       if (att.awaken <= 0) att.ult = Math.min(100, att.ult + dmg * 1.25);
       if (o.bite && att.awaken > 0 && att.def.ultLifesteal && dmg > 0) { const h = dmg * att.def.ultLifesteal; att.hp = Math.min(100, att.hp + h); popText(head(att), '+' + h.toFixed(1), 'heal'); }
@@ -1037,6 +1182,7 @@ function hit(att, tgt, dmg, o = {}) {
     }
     return 'hit';
   }
+  if (tgt.lantern) return hitLantern(att, tgt, dmg);
   if (tgt.invuln()) return false;
   const from = o.from || att.pos;
   if (tgt.counter > 0 && !o.noCounter) { fishCounter(tgt, att); return 'countered'; }
@@ -1052,6 +1198,7 @@ function hit(att, tgt, dmg, o = {}) {
   if (tgt.awaken > 0 && tgt.def.ultDmgTaken) amt *= tgt.def.ultDmgTaken;
   amt = Math.round(amt * 100) / 100;
   tgt.hp = Math.max(0, tgt.hp - amt); tgt.lastHurt = gameTime;
+  if (att && att !== tgt) tgt.lastAtt = att;
   if (att && att !== tgt && !att.remote) {
     if (att.awaken <= 0) att.ult = Math.min(100, att.ult + amt * 1.25);
     if (o.bite && att.awaken > 0 && att.def.ultLifesteal && amt > 0) { const h = amt * att.def.ultLifesteal; att.hp = Math.min(100, att.hp + h); popText(head(att), '+' + h.toFixed(1), 'heal'); }
@@ -1079,7 +1226,7 @@ function hit(att, tgt, dmg, o = {}) {
     if (o.up !== undefined) { tgt.vel.y = o.up; if (o.up > 0) { tgt.onGround = false; tgt.pos.y += 0.03; } }
     else if (!tgt.onGround) tgt.vel.y = Math.max(tgt.vel.y, 2.5);
   }
-  if (o.ragdoll) { tgt.ragdoll = Math.max(tgt.ragdoll, o.ragdoll); tgt.ragSpin = -rand(8, 12); tgt.yaw = Math.atan2(-kd.x, -kd.z); }
+  if (o.ragdoll) { tgt.ragdoll = Math.max(tgt.ragdoll, o.ragdoll); tgt.ragSpin = -rand(8, 12); tgt.yaw = Math.atan2(-kd.x, -kd.z); tgt.splatted = false; }
   if (o.flatten) { tgt.flatten = Math.max(tgt.flatten, o.flatten); tgt.stun = Math.max(tgt.stun, o.flatten); }
   if (o.tumble) { tgt.tumble = 0.45; tgt.tumbleDir = o.tumble; }
   if (o.bleed) applyBleed(tgt, att);
@@ -1113,7 +1260,7 @@ function respawn(f) {
   if (f.awaken > 0) { f.awaken = 0; f.def.ult.end(f); }
   if (f.action) f.endAction(true);
   f.reset();
-  f.pos.copy(f.isDummy ? new V3(0, 0, 0) : spawnPoint()); f.vel.set(0, 0, 0);
+  f.pos.copy(f.isDummy ? DUMMY_HOME : spawnPoint()); f.vel.set(0, 0, 0);
   f.yaw = f === player ? camYaw : rand(0, TAU); f.iframes = 1.5;
   Object.assign(f.V, { rx: 0, ry: 0, rz: 0, y: 1, sy: 1, sxz: 1 });
   if (f.ai) Object.assign(f.ai, makeAI());
@@ -1208,7 +1355,7 @@ function doDash(f, I) {
   } else {
     f.fdashCd = 6;
     let dir = Math.abs(fw) > 0.1 || Math.abs(st) > 0.1 ? F.clone() : f.fwd();
-    const t0 = bestFront(f, 14, 0.6) || null;
+    const t0 = (f === player && lockedFoe(14)) || bestFront(f, 14, 0.6) || null;
     if (t0) dir = tA.set(t0.pos.x - f.pos.x, 0, t0.pos.z - f.pos.z).normalize().clone();
     f.yaw = Math.atan2(dir.x, dir.z);
     f.startAction({
@@ -1340,6 +1487,119 @@ function updateCans(dt) {
       if (c.t > 25) { c.state = 'idle'; m.position.copy(c.home); m.rotation.set(0, 0, 0); c.vel.set(0, 0, 0); emit('dust', c.home, { n: 6 }); }
     }
   }
+}
+
+// =====================================================================
+// centre-plaza King of the Hill: the Golden Lantern
+// offline or as room host this runs the 60 s timer; clients only see (and hit) the host's lantern
+// =====================================================================
+const KOTH = { f: null, t: LANTERN.every, dmg: new Map(), best: 0, mine: 0, known: true, mode: 'offline' };
+const kV = new V3();
+const lanternLight = new THREE.PointLight(0xffc24a, 0, 12, 2);   // always in the scene (dark when idle) so spawns never recompile shaders
+lanternLight.position.set(0, 1.7, 0); scene.add(lanternLight);
+const evChip = { el: $('#evChip'), txt: $('#evTxt'), key: null };
+function lanternAnnounce() { showBanner('King of the hill', 'Golden Lantern'); addFeed(null, 'A Golden Lantern dropped into the plaza', ''); }
+function spawnLantern() {
+  KOTH.t = LANTERN.every; KOTH.dmg.clear(); KOTH.best = 0; KOTH.mine = 0;
+  const L = new Fighter('lantern', { name: 'Golden Lantern', localKey: 'L' });
+  L.id = NET.me + ':' + L.localKey; L.pos.set(0, LANTERN.drop, 0); L.dropT = 0; L.iframes = 1;
+  fighters.push(L); KOTH.f = L;
+  audioAt(null); SFX.gong(); lanternAnnounce(); netFx(['L', 's']);
+}
+function landLantern(L) {
+  const c = L.pos;
+  audioAt(c); SFX.slam(); shake(c, 0.6);
+  ring(c, '#ffcf3a', 6.5, 0.6); ring(c, '#ffffff', 3.6, 0.4); crater(c, 1.9);
+  emit('stars', kV.set(c.x, 1.2, c.z), { n: 26, speed: 9 }); emit('dust', c, { n: 14, speed: 6 });
+  for (const o of fighters) {   // shove anyone standing on the drop spot
+    if (o === L || o.remote || o.dead || o.held) continue;
+    const d = Math.hypot(o.pos.x - c.x, o.pos.z - c.z); if (d > 2.6) continue;
+    const nx = d > 0.05 ? (o.pos.x - c.x) / d : 1, nz = d > 0.05 ? (o.pos.z - c.z) / d : 0;
+    o.vel.x = nx * 12; o.vel.z = nz * 12; o.vel.y = 7; o.onGround = false; o.pos.y += 0.03;
+  }
+}
+// every attack routes here through hit(); damage is tallied per attacker and the first to LANTERN.need cracks it
+function hitLantern(att, L, dmg) {
+  if (L.dead || L.invuln() || !(dmg > 0)) return false;
+  const amt = Math.round(dmg * 100) / 100, key = att && att.id != null ? String(att.id) : '?';
+  const tot = (KOTH.dmg.get(key) || 0) + amt; KOTH.dmg.set(key, tot);
+  if (att === player) KOTH.mine = tot;
+  KOTH.best = Math.max(KOTH.best, tot);
+  L.hp = Math.max(0, 100 * (1 - KOTH.best / LANTERN.need)); L.lastHurt = gameTime; L.flinch = 0.16;
+  audioAt(L.pos); SFX.clang();
+  kV.set(L.pos.x, L.pos.y + 1.6, L.pos.z);
+  emit('stars', kV, { n: 8, speed: 6 }); popText(kV, fmt(amt), '');
+  if (tot >= LANTERN.need) breakLantern(L, att);
+  return 'hit';
+}
+function grantLantern(f) {
+  if (!f || f.dead) return;
+  f.ult = Math.min(100, f.ult + LANTERN.ult); f.hp = Math.min(100, f.hp + LANTERN.heal);
+  audioAt(f.pos); SFX.lantern();
+  popText(head(f), '+' + LANTERN.heal + ' HP', 'heal'); popText(center(f), '+' + LANTERN.ult + '% AWAKEN', 'call');
+  emit('stars', center(f), { n: 22, speed: 7 }); ring(f.pos, '#ffcf3a', 3.6, 0.5);
+  if (f === player) showBanner('Golden Lantern', '+' + LANTERN.heal + ' HP · +' + LANTERN.ult + '% Awaken');
+}
+function breakLantern(L, att) {
+  L.dead = true; L.hp = 0;
+  const name = att && att.name ? att.name : 'Someone';
+  kV.set(L.pos.x, L.pos.y + 1.6, L.pos.z);
+  audioAt(L.pos); SFX.lantern(); SFX.crumble(); shake(L.pos, 0.55);
+  flashSphere(kV, '#ffe08a', 3.2, 0.4); ring(L.pos, '#ffcf3a', 7.5, 0.6); ring(L.pos, '#ffffff', 4.2, 0.45);
+  emit('stars', kV, { n: 40, speed: 12 }); emit('ember', kV, { n: 20, speed: 3 });
+  emit('fire', kV, { n: 14, speed: 8, colors: ['#ffcf3a', '#fff3b5', '#ff9a1f'] });
+  spawnDebris(kV.set(L.pos.x, 0.4, L.pos.z), 1.3, lanternMat.wood, null, 7);
+  addFeed(name, 'the Golden Lantern', 'cracked');
+  netFx(['L', 'x', att && att.remote ? String(att.id) : '', name]);
+  if (att && !att.remote && fighters.includes(att)) grantLantern(att);
+  if (lock.t === L) setLock(null);
+  L.dispose(); const i = fighters.indexOf(L); if (i >= 0) fighters.splice(i, 1);
+  KOTH.f = null; KOTH.t = LANTERN.every; KOTH.dmg.clear(); KOTH.best = 0; KOTH.mine = 0;
+}
+function updateLantern(dt, rdt) {
+  if (KOTH.mode !== NET.mode) {   // joining a room hands the event to its host; leaving one restarts our own timer
+    const wasClient = KOTH.mode === 'client'; KOTH.mode = NET.mode;
+    if (NET.mode === 'client') KOTH.known = false;
+    else if (wasClient) { KOTH.known = true; KOTH.t = LANTERN.every; }
+  }
+  if (KOTH.f && !fighters.includes(KOTH.f)) { KOTH.f = null; KOTH.mine = 0; }
+  const L = KOTH.f;
+  if (!L) {
+    if (KOTH.known) KOTH.t = Math.max(0, KOTH.t - rdt);
+    if (NET.mode !== 'client' && KOTH.t <= 0) spawnLantern();
+    return;
+  }
+  if (L.remote) return;
+  // anchored at the plaza centre: knockback, grabs, pulls and freezes never move it
+  L.vel.set(0, 0, 0); L.pos.x = 0; L.pos.z = 0; L.yaw = 0; L.onGround = true;
+  L.held = false; L.heldPose = null; L.stun = 0; L.ragdoll = 0; L.flatten = 0; L.frozen = 0; L.tumble = 0; L.slowT = 0; L.bleed = null; L.blocking = false;
+  if (L.flinch > 0) L.flinch = Math.max(0, L.flinch - dt);
+  if (L.iframes > 0) L.iframes = Math.max(0, L.iframes - dt);
+  if (L.dropT < 1) {
+    L.dropT = Math.min(1, L.dropT + rdt / 1.2); L.iframes = Math.max(L.iframes, 0.1);
+    L.pos.y = LANTERN.drop * (1 - L.dropT * L.dropT);
+    if (L.dropT >= 1) landLantern(L);
+  } else L.pos.y = 0;
+}
+function animateLantern(rdt) {
+  const L = KOTH.f;
+  if (!L || L.dead || !fighters.includes(L)) { lanternLight.intensity = 0; return; }
+  const g = L.rig.glow;
+  g.rotation.y += rdt * 0.9; g.position.y = 1.62 + Math.sin(realClock * 2.2) * 0.1;
+  lanternMat.beam.opacity = 0.11 + Math.sin(realClock * 3.1) * 0.035;
+  lanternLight.position.set(L.pos.x, L.pos.y + 1.7, L.pos.z);
+  lanternLight.intensity = 1.5 + Math.sin(realClock * 5.3) * 0.25;
+}
+function updateEventChip() {
+  const L = KOTH.f, live = !!(L && !L.dead), drop = live && L.invuln();
+  const key = live ? (drop ? -2 : -10 - Math.floor(KOTH.mine)) : KOTH.known ? Math.ceil(KOTH.t) : -1;
+  if (key === evChip.key) return;
+  evChip.key = key;
+  let s = '';
+  if (drop) s = 'Golden Lantern incoming';
+  else if (live) s = KOTH.mine > 0 ? 'Lantern · you ' + Math.floor(KOTH.mine) + ' / ' + LANTERN.need : 'Lantern live · first to ' + LANTERN.need + ' dmg';
+  else if (KOTH.known) { const sec = Math.max(0, Math.ceil(KOTH.t)); s = 'Golden Lantern in ' + Math.floor(sec / 60) + ':' + String(sec % 60).padStart(2, '0'); }
+  evChip.txt.textContent = s; evChip.el.hidden = !s; evChip.el.classList.toggle('live', live && !drop);
 }
 
 // =====================================================================
@@ -2106,6 +2366,10 @@ const CHARS = {
     name: 'Dummy', short: '', color: '#c9b48a', fx: 'dust', lieY: 0.15, build: buildDummy, rest: { armL: [0, 0, 0.25], armR: [0, 0, -0.25] },
     m1: [], moves: [], ai: [], ult: { name: '', start() {}, tick() {}, end() {} },
   },
+  lantern: {
+    name: 'Golden Lantern', short: 'King of the hill', color: '#ffcf3a', fx: 'stars', lieY: 0.2, build: buildLantern,
+    m1: [], moves: [], ai: [], ult: { name: '', start() {}, tick() {}, end() {} },
+  },
 };
 const PLAYABLE = ['lion', 'penguin', 'steve', 'shark'];
 
@@ -2236,7 +2500,9 @@ function updateFighter(f, dt, rdt, I) {
     f.vel.x = damp(f.vel.x, I.move.x * sp, k, dt); f.vel.z = damp(f.vel.z, I.move.z * sp, k, dt);
     if (!(f.action && f.action.lockFacing)) {
       let ty = null;
-      if (f.faceMode === 'camera') ty = camYaw;
+      const lk = f === player && f.faceMode !== 'camera' ? lockedFoe(LOCK.face) : null;
+      if (lk) ty = Math.atan2(lk.pos.x - f.pos.x, lk.pos.z - f.pos.z);
+      else if (f.faceMode === 'camera') ty = camYaw;
       else if (f.faceMode === 'enemy') { const o = f.ai && f.ai.target; if (o && !o.dead && distH(f, o) < 14) ty = Math.atan2(o.pos.x - f.pos.x, o.pos.z - f.pos.z); else if (I.move.lengthSq() > 0.01) ty = Math.atan2(I.move.x, I.move.z); }
       else if (I.move.lengthSq() > 0.01) ty = Math.atan2(I.move.x, I.move.z);
       if (ty !== null) f.yaw = dampAngle(f.yaw, ty, f.faceMode === 'camera' ? 40 : 18, dt);
@@ -2276,6 +2542,7 @@ function collideWorld(f) {
     if (f.pos.y + 1.9 < b.min.y) continue;
     const hs = Math.hypot(f.vel.x, f.vel.z);
     if (!b.static && ((f.ragdoll > 0 && hs > 9) || (f.action && f.action.breaker))) {
+      if (f.ragdoll > 0 && hs > SPLAT.speed && !b.temp && !f.dead && !f.splatted) { wallSplat(f, b, dx, dz, d2, hs); continue; }
       breakBlock(b, f.pos); f.vel.x *= 0.65; f.vel.z *= 0.65; if (f.ragdoll > 0) { shake(f.pos, 0.3); emit('brick', center(f), { n: 8 }); } continue;
     }
     if (d2 > 1e-6) {
@@ -2302,14 +2569,44 @@ function collideWorld(f) {
   if (Math.abs(f.pos.z) > BOUND) { f.pos.z = Math.sign(f.pos.z) * BOUND; f.vel.z = 0; }
   if (f.onGround && !wasGround && prevVy < -14 && f.ragdoll <= 0) emit('dust', f.pos, { n: 4, speed: 2 });
 }
+// Wall Splat: a ragdoll that hits arena brick above SPLAT.speed is pinned and crumples down the wall.
+// The extra stun starts once the post-ragdoll i-frames end, so the attacker gets a real follow-up window.
+const splatP = new V3(), splatBack = new V3();
+function wallSplat(f, b, dx, dz, d2, hs) {
+  let nx, nz;
+  if (d2 > 1e-6) { const d = Math.sqrt(d2); nx = dx / d; nz = dz / d; } else { nx = -f.vel.x / hs; nz = -f.vel.z / hs; }
+  f.splatted = true;
+  splatP.set(f.pos.x - nx * 0.45, f.pos.y + 1.1, f.pos.z - nz * 0.45);
+  splatBack.set(splatP.x - nx * 1.5, splatP.y, splatP.z - nz * 1.5);
+  breakBlock(b, splatP);
+  spawnDebris(splatP, 1.5, b.m.material, splatBack, 9);
+  emit('brick', splatP, { n: 22, speed: 9 }); emit('dust', splatP, { n: 10, speed: 5 });
+  f.vel.x = nx * 2.5; f.vel.z = nz * 2.5; f.vel.y = Math.min(f.vel.y, 1);
+  if (f.ragdoll > SPLAT.slide) f.ragdoll = SPLAT.slide;
+  f.ragSpin *= 0.25;
+  f.stun = Math.max(f.stun, f.ragdoll + 0.35) + SPLAT.stun;
+  const att = f.lastAtt && f.lastAtt !== f && f.lastAtt.pos ? f.lastAtt : null;
+  let amt = SPLAT.dmg * (f.awaken > 0 && f.def.ultDmgTaken ? f.def.ultDmgTaken : 1);
+  amt = Math.round(amt * 100) / 100;
+  f.hp = Math.max(0, f.hp - amt); f.lastHurt = gameTime;
+  if (att && !att.remote) { if (att.awaken <= 0) att.ult = Math.min(100, att.ult + amt * 1.25); if (att === player) comboHit(); }
+  audioAt(f.pos); SFX.splat();
+  popText(head(f), 'WALL SPLAT', 'call'); popText(center(f), fmt(amt), 'big');
+  shake(f.pos, 0.75); hitStop(0.05);
+  netFx(['ws', r2(splatP.x), r2(splatP.y), r2(splatP.z), r2(nx), r2(nz)]);
+  if (f.hp <= 0) KO(f, att);
+}
 function separateAll() {
   for (let i = 0; i < fighters.length; i++) for (let j = i + 1; j < fighters.length; j++) {
     const a = fighters[i], b = fighters[j];
-    if (a.held || b.held || a.submerged || b.submerged || a.dead || b.dead || (a.remote && b.remote)) continue;
+    if (a.held || b.held || a.submerged || b.submerged || a.dead || b.dead) continue;
+    // remote puppets and the anchored Golden Lantern never get pushed here; only the local fighter moves
+    const fa = a.remote || a.lantern, fb = b.remote || b.lantern;
+    if (fa && fb) continue;
     const dx = b.pos.x - a.pos.x, dz = b.pos.z - a.pos.z, d = Math.hypot(dx, dz);
     if (d >= 0.95 || Math.abs(a.pos.y - b.pos.y) > 1.8) continue;
     const nx = d > 1e-4 ? dx / d : 1, nz = d > 1e-4 ? dz / d : 0, push = 0.95 - d;
-    const wa = a.remote ? 0 : b.remote ? 1 : 0.5, wb = 1 - wa;
+    const wa = fa ? 0 : fb ? 1 : 0.5, wb = 1 - wa;
     a.pos.x -= nx * push * wa; a.pos.z -= nz * push * wa; b.pos.x += nx * push * wb; b.pos.z += nz * push * wb;
   }
 }
@@ -2333,13 +2630,16 @@ addEventListener('keydown', (e) => {
   if (c === 'KeyH' && !e.repeat) $('#help').hidden = !$('#help').hidden;
   if (c === 'KeyM' && !e.repeat) toggleMute();
   if (c === 'KeyC' && !e.repeat) toggleCharMenu();
+  if (c === 'Tab' && !e.repeat) toggleLock();
 });
 addEventListener('keyup', (e) => { keys[e.code] = false; });
-addEventListener('blur', () => { for (const k in keys) keys[k] = false; mouseHeld = false; rightDrag = false; });
+addEventListener('blur', () => { for (const k in keys) keys[k] = false; mouseHeld = false; rightDrag = false; resetTouch(); });
 canvas.addEventListener('contextmenu', (e) => e.preventDefault());
 canvas.addEventListener('mousedown', (e) => {
+  if (performance.now() - TOUCH.lastT < 900) return;   // compatibility mouse event after a touch: the touch handlers own it
   SFX.init(); canvas.focus(); closeCharMenu();
   if (e.button === 0) { mouseHeld = true; pressed.m1 = true; }
+  if (e.button === 1) { e.preventDefault(); toggleLock(); }
   if (e.button === 2) rightDrag = true;
 });
 addEventListener('mouseup', (e) => { if (e.button === 0) mouseHeld = false; if (e.button === 2) rightDrag = false; });
@@ -2347,6 +2647,7 @@ addEventListener('mousemove', (e) => {
   if (shiftLock || rightDrag) {
     camYaw -= (e.movementX || 0) * 0.0062;
     camPitch = clamp(camPitch + (e.movementY || 0) * 0.0045, -0.3, 1.25);
+    if (e.movementX || e.movementY) lastLookT = realClock;
   }
 });
 canvas.addEventListener('wheel', (e) => { e.preventDefault(); camDist = clamp(camDist + Math.sign(e.deltaY) * 0.9, 4, 18); }, { passive: false });
@@ -2367,15 +2668,203 @@ document.addEventListener('pointerlockchange', () => {
 function playerIntent() {
   const I = blankIntent();
   if (!player) return I;
-  const fw = (keys.KeyW || keys.ArrowUp ? 1 : 0) - (keys.KeyS || keys.ArrowDown ? 1 : 0);
-  const st = (keys.KeyD || keys.ArrowRight ? 1 : 0) - (keys.KeyA || keys.ArrowLeft ? 1 : 0);
+  const fw = clamp((keys.KeyW || keys.ArrowUp ? 1 : 0) - (keys.KeyS || keys.ArrowDown ? 1 : 0) + TOUCH.fw, -1, 1);
+  const st = clamp((keys.KeyD || keys.ArrowRight ? 1 : 0) - (keys.KeyA || keys.ArrowLeft ? 1 : 0) + TOUCH.st, -1, 1);
   const sy = Math.sin(camYaw), cy = Math.cos(camYaw);
   I.move.set(sy * fw - cy * st, 0, cy * fw + sy * st); if (I.move.lengthSq() > 1) I.move.normalize();
   I.fw = fw; I.st = st; I.byaw = camYaw;
-  I.jump = !!pressed.Space; I.spaceHeld = !!keys.Space; I.dash = !!pressed.KeyQ; I.block = !!keys.KeyF;
-  I.m1 = mouseHeld || !!pressed.m1; I.ult = !!pressed.KeyG; I.grab = !!pressed.KeyR;
+  I.jump = !!pressed.Space; I.spaceHeld = !!keys.Space || TOUCH.jump; I.dash = !!pressed.KeyQ; I.block = !!keys.KeyF || TOUCH.block;
+  I.m1 = mouseHeld || TOUCH.m1 || !!pressed.m1; I.ult = !!pressed.KeyG; I.grab = !!pressed.KeyR;
   for (let i = 0; i < 4; i++) I.abil[i] = !!pressed['Digit' + (i + 1)] || !!pressed['Numpad' + (i + 1)];
   return I;
+}
+
+// =====================================================================
+// touch controls: coarse pointers get a floating stick, an action cluster and a tappable hotbar
+// (they feed the same intent fields as the keyboard and mouse)
+// =====================================================================
+const TOUCH = { on: false, fw: 0, st: 0, m1: false, block: false, jump: false, stick: null, cx: 0, cy: 0, R: 48, look: new Map(), pinch: 0, lastT: -1e9 };
+const stickZone = $('#stickZone'), stickBase = $('#stickBase'), stickKnob = $('#stickKnob');
+const tbtns = document.querySelectorAll('.tbtn');
+function enableTouch(on) {
+  if (TOUCH.on === on) return;
+  TOUCH.on = on;
+  document.body.classList.toggle('touch', on); $('#touch').hidden = !on;
+  $('#ultBar b').textContent = on ? 'TAP · AWAKEN' : '[G] AWAKEN';
+  if (on) $('#help').hidden = true;
+  resetTouch(); syncHudVars();
+}
+function resetTouch() {
+  TOUCH.fw = 0; TOUCH.st = 0; TOUCH.m1 = false; TOUCH.block = false; TOUCH.jump = false; TOUCH.stick = null; TOUCH.look.clear(); TOUCH.pinch = 0;
+  stickBase.style.transform = ''; stickKnob.style.transform = ''; stickBase.classList.remove('on');
+  for (const b of tbtns) b.classList.remove('on');
+}
+function stickMove(e) {
+  let dx = e.clientX - TOUCH.cx, dy = e.clientY - TOUCH.cy;
+  const d = Math.hypot(dx, dy), R = TOUCH.R;
+  if (d > R) { dx *= R / d; dy *= R / d; }
+  stickKnob.style.transform = 'translate(' + dx.toFixed(1) + 'px,' + dy.toFixed(1) + 'px)';
+  const m = Math.min(1, d / R), live = m < 0.14 ? 0 : (m - 0.14) / 0.86, L = Math.hypot(dx, dy) || 1;
+  TOUCH.st = (dx / L) * live; TOUCH.fw = (-dy / L) * live;
+}
+stickZone.addEventListener('pointerdown', (e) => {
+  if (TOUCH.stick !== null || !TOUCH.on) return;
+  e.preventDefault(); SFX.init(); closeCharMenu(); TOUCH.lastT = performance.now();
+  TOUCH.stick = e.pointerId;
+  try { stickZone.setPointerCapture(e.pointerId); } catch (err) { /* synthetic pointer */ }
+  // float the stick under the thumb, kept inside the zone
+  const r = stickBase.getBoundingClientRect(), z = stickZone.getBoundingClientRect(), hw = r.width / 2;
+  TOUCH.R = r.width * 0.36;
+  TOUCH.cx = clamp(e.clientX, z.left + hw, z.right - hw); TOUCH.cy = clamp(e.clientY, z.top + hw, z.bottom - hw);
+  stickBase.style.transform = 'translate(' + (TOUCH.cx - r.left - hw).toFixed(1) + 'px,' + (TOUCH.cy - r.top - hw).toFixed(1) + 'px)';
+  stickBase.classList.add('on');
+  stickMove(e);
+});
+stickZone.addEventListener('pointermove', (e) => { if (e.pointerId === TOUCH.stick) stickMove(e); });
+function stickEnd(e) {
+  if (e.pointerId !== TOUCH.stick) return;
+  TOUCH.stick = null; TOUCH.fw = 0; TOUCH.st = 0;
+  stickBase.style.transform = ''; stickKnob.style.transform = ''; stickBase.classList.remove('on');
+}
+for (const ev of ['pointerup', 'pointercancel', 'lostpointercapture']) stickZone.addEventListener(ev, stickEnd);
+function touchAct(act, down) {
+  switch (act) {
+    case 'm1': TOUCH.m1 = down; if (down) pressed.m1 = true; break;
+    case 'jump': TOUCH.jump = down; if (down) pressed.Space = true; break;
+    case 'block': TOUCH.block = down; break;
+    case 'dash': if (down) pressed.KeyQ = true; break;
+    case 'grab': if (down) pressed.KeyR = true; break;
+    case 'lock': if (down) toggleLock(); break;
+  }
+}
+for (const b of tbtns) {
+  const act = b.dataset.act;
+  b.addEventListener('pointerdown', (e) => {
+    if (!TOUCH.on) return;
+    e.preventDefault(); SFX.init(); closeCharMenu(); TOUCH.lastT = performance.now();
+    try { b.setPointerCapture(e.pointerId); } catch (err) { /* synthetic pointer */ }
+    b.classList.add('on'); touchAct(act, true);
+  });
+  const up = () => { if (b.classList.contains('on')) { b.classList.remove('on'); touchAct(act, false); } };
+  for (const ev of ['pointerup', 'pointercancel', 'lostpointercapture']) b.addEventListener(ev, up);
+  b.addEventListener('contextmenu', (e) => e.preventDefault());
+}
+// hotbar: tap or click a move slot / the AWAKEN bar (same as pressing 1–4 / G)
+$('#slots').addEventListener('pointerdown', (e) => {
+  const s = e.target.closest('.slot'); if (!s) return;
+  e.preventDefault(); SFX.init(); if (e.pointerType === 'touch') TOUCH.lastT = performance.now();
+  pressed['Digit' + (Number(s.dataset.i) + 1)] = true;
+});
+$('#ultBar').addEventListener('pointerdown', (e) => { e.preventDefault(); SFX.init(); if (e.pointerType === 'touch') TOUCH.lastT = performance.now(); pressed.KeyG = true; });
+// drag anywhere else on the arena to orbit the camera; two fingers pinch to zoom
+function pinchSpan() { let a = null; for (const p of TOUCH.look.values()) { if (!a) a = p; else return Math.hypot(p.x - a.x, p.y - a.y); } return 0; }
+canvas.addEventListener('pointerdown', (e) => {
+  if (e.pointerType !== 'touch') return;
+  e.preventDefault(); enableTouch(true); SFX.init(); closeCharMenu(); TOUCH.lastT = performance.now();
+  try { canvas.setPointerCapture(e.pointerId); } catch (err) { /* synthetic pointer */ }
+  TOUCH.look.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  TOUCH.pinch = TOUCH.look.size >= 2 ? pinchSpan() : 0;
+});
+canvas.addEventListener('pointermove', (e) => {
+  const p = TOUCH.look.get(e.pointerId); if (!p) return;
+  const dx = e.clientX - p.x, dy = e.clientY - p.y; p.x = e.clientX; p.y = e.clientY;
+  if (TOUCH.look.size >= 2) { const s = pinchSpan(); if (TOUCH.pinch > 0 && s > 0) camDist = clamp(camDist * TOUCH.pinch / s, 4, 18); TOUCH.pinch = s; return; }
+  camYaw -= dx * 0.0075; camPitch = clamp(camPitch + dy * 0.0055, -0.3, 1.25); lastLookT = realClock;
+});
+function lookEnd(e) { if (TOUCH.look.delete(e.pointerId)) TOUCH.pinch = TOUCH.look.size >= 2 ? pinchSpan() : 0; }
+for (const ev of ['pointerup', 'pointercancel', 'lostpointercapture']) canvas.addEventListener(ev, lookEnd);
+// keep the HUD's measured edges in CSS so the touch cluster and top-centre panel never overlap them
+const rootStyle = document.documentElement.style;
+function syncHudVars() {
+  const t = $('#tsb').getBoundingClientRect(), r = $('#room').getBoundingClientRect();
+  rootStyle.setProperty('--tsbTop', Math.round(innerHeight - t.top) + 'px');
+  rootStyle.setProperty('--roomB', Math.round(r.bottom) + 'px');
+}
+if (window.ResizeObserver) { const ro = new ResizeObserver(syncHudVars); ro.observe($('#tsb')); ro.observe($('#room')); }
+addEventListener('resize', syncHudVars);
+const coarsePointer = matchMedia('(pointer: coarse)');
+if (coarsePointer.addEventListener) coarsePointer.addEventListener('change', () => enableTouch(coarsePointer.matches));
+// hybrid devices: a touch brings the touch layout in, a real mouse press takes it back out
+addEventListener('pointerdown', (e) => { if (e.pointerType === 'touch') enableTouch(true); else if (e.pointerType === 'mouse' && !coarsePointer.matches) enableTouch(false); }, true);
+
+// =====================================================================
+// hard target lock-on (Tab / middle click / LOCK): reticle, camera pull, top-centre target panel
+// =====================================================================
+const lock = { t: null, id: null, a: 0 };
+let lastLookT = -9;
+const reticleTex = canvasTex(128, 128, (g) => {
+  g.translate(64, 64); g.strokeStyle = '#fff'; g.fillStyle = '#fff'; g.lineCap = 'round';
+  g.lineWidth = 7;
+  for (let i = 0; i < 4; i++) { g.beginPath(); g.arc(0, 0, 54, i * PI / 2 + 0.32, (i + 1) * PI / 2 - 0.32); g.stroke(); }
+  g.lineWidth = 2.5; g.globalAlpha = 0.55; g.beginPath(); g.arc(0, 0, 40, 0, TAU); g.stroke(); g.globalAlpha = 1;
+  for (let i = 0; i < 4; i++) { g.save(); g.rotate(i * PI / 2); g.beginPath(); g.moveTo(0, -44); g.lineTo(-8, -60); g.lineTo(8, -60); g.closePath(); g.fill(); g.restore(); }
+});
+const reticleMat = new THREE.MeshBasicMaterial({ map: reticleTex, color: '#ff5747', transparent: true, opacity: 0, depthWrite: false, side: THREE.DoubleSide });
+const reticle = new THREE.Group();
+{ const m = new THREE.Mesh(new THREE.PlaneGeometry(2.3, 2.3), reticleMat); m.rotation.x = -PI / 2; m.renderOrder = 2; reticle.add(m); }
+reticle.visible = false; scene.add(reticle);
+const lockBtn = $('.tb-lock');
+const lockHud = { el: $('#lockHud'), name: $('#lockName'), ch: $('#lockChar'), fill: $('#lockFill'), lag: $('#lockLag'), txt: $('#lockTxt'), who: null, lagHp: 100, hpK: -1, lagK: -1 };
+function lockedFoe(range) {
+  const t = lock.t;
+  return t && player && !t.dead && distH(player, t) <= range && fighters.includes(t) ? t : null;
+}
+function setLock(t) {
+  lock.t = t; lock.id = t ? t.id : null; lock.a = 0;
+  if (!t) reticle.visible = false;
+  lockBtn.classList.toggle('armed', !!t);
+  updateLockHud(t, 0);
+}
+function toggleLock() {
+  if (!player) return;
+  audioAt(null);
+  if (lock.t) { setLock(null); SFX.lockOff(); return; }
+  if (player.dead) return;
+  let best = null, bd = LOCK.range;
+  for (const o of fighters) { if (o === player || o.dead) continue; const d = distH(player, o); if (d < bd) { bd = d; best = o; } }
+  if (best) { setLock(best); SFX.lockOn(); } else popText(head(player), 'NO TARGET IN RANGE', 'blk');
+}
+function updateLock(rdt) {
+  let t = lock.t;
+  if (t && !fighters.includes(t)) {   // a remote puppet is rebuilt when its owner switches character: follow the same id
+    t = null; for (const o of fighters) if (o.id === lock.id && o !== player) { t = o; break; }
+    lock.t = t;
+  }
+  if (t && (t.dead || !player || player.dead || distH(player, t) > LOCK.drop)) t = null;
+  if (!t) { if (lock.t || lock.id) setLock(null); return; }
+  lock.a = Math.min(1, lock.a + rdt * 5);
+  const e = ease(lock.a);
+  reticle.visible = !t.submerged;
+  reticle.position.set(t.pos.x, t.pos.y + 0.06, t.pos.z);
+  reticle.rotation.y += rdt * 1.5;
+  reticle.scale.setScalar((t.lantern ? 1.45 : 1) * (lerp(1.6, 1, e) + Math.sin(realClock * 6) * 0.04));
+  reticleMat.opacity = 0.78 * e;
+  // camera yaw eases toward the target; a recent mouse / touch look keeps the player in charge
+  const dx = t.pos.x - player.pos.x, dz = t.pos.z - player.pos.z, d = Math.hypot(dx, dz);
+  if (d > 0.6) {
+    const k = LOCK.yawBias * clamp((d - 1.2) / 2.5, 0, 1) * (realClock - lastLookT < 0.4 ? 0.12 : 1);
+    if (k > 0) camYaw = dampAngle(camYaw, Math.atan2(dx, dz), k, rdt);
+  }
+  updateLockHud(t, rdt);
+}
+function updateLockHud(t, rdt) {
+  const H = lockHud;
+  if (H.who !== t) {
+    H.who = t; H.el.hidden = !t;
+    if (!t) return;
+    const d = t.def, han = !t.lantern && !t.isDummy && d.han;
+    H.name.textContent = t.name;
+    H.ch.textContent = t.lantern ? 'Plaza event' : t.isDummy ? 'Training' : d.name;
+    H.ch.className = han ? 'han' : '';
+    H.lagHp = clamp(t.hp, 0, 100); H.hpK = -1; H.lagK = -1;
+  }
+  if (!t) return;
+  const hp = clamp(t.hp, 0, 100);
+  H.lagHp = Math.max(hp, damp(H.lagHp, hp, gameTime - t.lastHurt > 0.5 ? 6 : 0, rdt));
+  const hk = Math.round(hp * 10);
+  if (hk !== H.hpK) { H.hpK = hk; H.fill.style.transform = 'scaleX(' + (hp / 100).toFixed(3) + ')'; H.txt.textContent = String(Math.ceil(hp)); }
+  const lk = Math.round(H.lagHp * 10);
+  if (lk !== H.lagK) { H.lagK = lk; H.lag.style.transform = 'scaleX(' + (H.lagHp / 100).toFixed(3) + ')'; }
 }
 
 // =====================================================================
@@ -2395,11 +2884,15 @@ function aiIntent(b, dt) {
   ai.retarget -= dt;
   if (ai.retarget <= 0 || !ai.target || ai.target.dead || !fighters.includes(ai.target)) {
     ai.retarget = rand(2.5, 5);
-    const list = foes(b).filter((o) => distH(b, o) < 34).sort((x, y) => distH(b, x) - distH(b, y));
-    const human = list.find((o) => !o.ai && !o.isDummy);
-    const onHuman = human ? fighters.filter((o) => o !== b && o.ai && o.ai.target === human).length : 0;
-    const pool = list.filter((o) => o !== human || onHuman < 1);
-    ai.target = human && onHuman < 1 && Math.random() < 0.3 ? human : pool.length ? pool[Math.random() < 0.6 ? 0 : Math.min(1 + ((Math.random() * 2) | 0), pool.length - 1)] : null;
+    const L = KOTH.f;
+    if (L && !L.dead && !L.invuln() && distH(b, L) < 34 && Math.random() < 0.45) ai.target = L;   // contest the Golden Lantern
+    else {
+      const list = foes(b).filter((o) => !o.lantern && distH(b, o) < 34).sort((x, y) => distH(b, x) - distH(b, y));
+      const human = list.find((o) => !o.ai && !o.isDummy);
+      const onHuman = human ? fighters.filter((o) => o !== b && o.ai && o.ai.target === human).length : 0;
+      const pool = list.filter((o) => o !== human || onHuman < 1);
+      ai.target = human && onHuman < 1 && Math.random() < 0.3 ? human : pool.length ? pool[Math.random() < 0.6 ? 0 : Math.min(1 + ((Math.random() * 2) | 0), pool.length - 1)] : null;
+    }
   }
   const p = ai.target;
   if (!p) {
@@ -2478,7 +2971,7 @@ function spawnNPCs() {
     const f = new Fighter(k, { name: pickName(), ai: makeAI(), localKey: 'B' + i });
     f.faceMode = 'enemy'; f.pos.copy(spawnPoint()); f.yaw = rand(0, TAU); fighters.push(f);
   }
-  const d = new Fighter('dummy', { name: 'Dummy', localKey: 'D' }); d.pos.set(0, 0, 0); fighters.push(d);
+  const d = new Fighter('dummy', { name: 'Dummy', localKey: 'D' }); d.pos.copy(DUMMY_HOME); fighters.push(d);
   reidLocal();
 }
 function clearLocalNPCs() { for (const f of localNPCs()) { f.dispose(); fighters.splice(fighters.indexOf(f), 1); } }
@@ -2497,6 +2990,7 @@ function applyState(e) {
   if (f && f.key !== e.c) { f.dispose(); fighters.splice(fighters.indexOf(f), 1); f = null; }
   if (!f) { f = new Fighter(e.c, { id: e.i, name: e.n, remote: true }); f.pos.set(e.p[0], e.p[1], e.p[2]); f.yaw = e.y; fighters.push(f); }
   f.net = e; f.seen = realClock;
+  if (f.lantern && KOTH.f !== f) { KOTH.f = f; KOTH.mine = 0; }
 }
 function updatePuppet(f, rdt) {
   const n = f.net; if (!n) return;
@@ -2551,6 +3045,18 @@ function applyFx(list) {
         case 's': sndAt = Math.min(0.7, r[3] || 0.5); if (SFX[r[1]]) SFX[r[1]](!!r[2]); break;
         case 'b': { const b = blocks.find((x) => x.id === r[1]); if (b) breakBlock(b, null); break; }
         case 'k': addFeed(r[1], r[2]); break;
+        case 'ws': { const p = new V3(r[1], r[2], r[3]); spawnDebris(p, 1.5, brickMats[0], tB.set(r[1] - r[4] * 1.5, r[2], r[3] - r[5] * 1.5), 9); shake(p, 0.75); break; }
+        case 'L': {
+          if (r[1] === 's') lanternAnnounce();
+          else if (r[1] === 'x') {   // the host's lantern was cracked: drop the puppet now, reward our fighter if it was ours
+            removePuppets((f) => f.lantern);
+            KOTH.f = null; KOTH.mine = 0; KOTH.known = true; KOTH.t = LANTERN.every;
+            addFeed(r[3] || 'Someone', 'the Golden Lantern', 'cracked');
+            const me = r[2] ? fighters.find((f) => !f.remote && f.id === r[2]) : null;
+            if (me) { NET.cap = true; grantLantern(me); NET.cap = false; }
+          }
+          break;
+        }
         case 'pj': {
           if (!GHOST[r[2]]) break;
           const m = GHOST[r[2]](); m.rotation.y = r[12] || 0;
@@ -2615,8 +3121,8 @@ function setRoomUI() {
   updateRoomCount();
 }
 function updateRoomCount() {
-  const humans = 1 + new Set(fighters.filter((f) => f.remote && !f.isDummy).map((f) => ownerOf(f.id))).size;
-  $('#roomCount').textContent = `${fighters.length} in arena · ${humans} real`;
+  const humans = 1 + new Set(fighters.filter((f) => f.remote && !f.isDummy && !f.lantern).map((f) => ownerOf(f.id))).size;
+  $('#roomCount').textContent = `${fighters.filter((f) => !f.lantern).length} in arena · ${humans} real`;
 }
 function randCode() { const A = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'; let s = ''; for (let i = 0; i < 5; i++) s += A[(Math.random() * A.length) | 0]; return s; }
 function leaveRoom(msg) {
@@ -2693,7 +3199,8 @@ function setupHUD() {
   const hn = $('#hpName'); hn.textContent = d.han ? d.name : player.name + ' · ' + d.name; hn.className = 'nm' + (d.han ? ' han' : '');
   const sl = $('#slots'); sl.innerHTML = ''; slotEls.length = 0;
   d.moves.forEach((m, i) => {
-    const box = document.createElement('div'); box.className = 'slot';
+    const box = document.createElement('div'); box.className = 'slot'; box.dataset.i = String(i);
+    box.setAttribute('role', 'button'); box.setAttribute('aria-label', 'Move ' + (i + 1) + ': ' + m.name);
     box.innerHTML = '<i class="cd"></i><span class="k"></span><span class="t"></span><span class="n"></span>';
     box.querySelector('.k').textContent = String(i + 1); box.querySelector('.n').textContent = m.name;
     sl.appendChild(box); slotEls.push({ box, cd: box.querySelector('.cd'), t: box.querySelector('.t'), last: '' });
@@ -2741,10 +3248,10 @@ function updateTags() {
     if (hp !== f.tagHp) { f.tagHp = hp; f.tagFill.style.transform = `scaleX(${hp / 100})`; f.tagFill.style.background = `hsl(${Math.round(hp * 1.2)},78%,48%)`; }
   }
 }
-function addFeed(killer, victim) {
+function addFeed(killer, victim, verb) {
   const el = document.createElement('div'); el.className = 'kf';
-  if (killer) { const a = document.createElement('b'); a.textContent = killer; const s = document.createElement('span'); s.textContent = 'K.O.'; const v = document.createElement('b'); v.textContent = victim; el.append(a, s, v); }
-  else el.textContent = victim + (victim.startsWith('A player') ? '' : ' was knocked out');
+  if (killer) { const a = document.createElement('b'); a.textContent = killer; const s = document.createElement('span'); s.textContent = verb || 'K.O.'; const v = document.createElement('b'); v.textContent = victim; el.append(a, s, v); }
+  else el.textContent = victim + (verb !== undefined || victim.startsWith('A player') ? '' : ' was knocked out');
   const feed = $('#feed'); feed.prepend(el);
   while (feed.children.length > 5) feed.lastChild.remove();
   setTimeout(() => { el.style.opacity = '0'; setTimeout(() => el.remove(), 450); }, 6000);
@@ -2786,7 +3293,9 @@ function switchCharacter(key) {
 // =====================================================================
 function updateCamera(rdt) {
   const p = player;
-  const ox = shiftLock ? -Math.cos(camYaw) * 1.1 : 0, oz = shiftLock ? Math.sin(camYaw) * 1.1 : 0;
+  // over-the-shoulder offset: shift-lock, or a hard lock so the target is never hidden behind the player
+  const sh = shiftLock ? 1.1 : lock.t ? LOCK.shoulder * ease(lock.a) : 0;
+  const ox = -Math.cos(camYaw) * sh, oz = Math.sin(camYaw) * sh;
   camT.x = damp(camT.x, p.pos.x + ox, 24, rdt); camT.y = damp(camT.y, p.pos.y + 1.7, 14, rdt); camT.z = damp(camT.z, p.pos.z + oz, 24, rdt);
   const cp = Math.cos(camPitch), sp = Math.sin(camPitch);
   camera.position.set(camT.x - Math.sin(camYaw) * cp * camDist, Math.max(0.5, camT.y + sp * camDist), camT.z - Math.cos(camYaw) * cp * camDist);
@@ -2811,15 +3320,17 @@ function frame(t) {
       const local = fighters.filter((f) => !f.remote);
       const intents = local.map((f) => (f === player ? playerIntent() : aiIntent(f, dt)));
       pressed = {};
-      local.forEach((f, i) => { if (fighters.includes(f)) updateFighter(f, dt, rdt, intents[i]); });
+      local.forEach((f, i) => { if (!f.lantern && fighters.includes(f)) updateFighter(f, dt, rdt, intents[i]); });
       separateAll();
       audioAt(null);
       updateProjs(dt); updateTraps(dt); updateCans(dt); updateBlocks(dt);
+      updateLantern(dt, rdt);
       NET.cap = false;
     }
     for (const f of fighters) { if (f.remote) updatePuppet(f, rdt); else animateFighter(f, dt, rdt); }
     updateParts(rdt); updateRings(rdt); updateTemps(dt);
-    updateCamera(rdt); updateHUD(rdt); updateNums(rdt); updateTags();
+    updateLock(rdt); animateLantern(rdt);
+    updateCamera(rdt); updateHUD(rdt); updateEventChip(); updateNums(rdt); updateTags();
     netTick(rdt);
     renderer.render(scene, camera);
   } catch (err) {
@@ -2839,6 +3350,7 @@ fighters.push(player);
 spawnNPCs();
 camT.set(0, 1.7, -14);
 buildCharMenu(); setupHUD(); setRoomUI();
+enableTouch(coarsePointer.matches); syncHudVars();
 requestAnimationFrame(frame);
 })();
 </script>
