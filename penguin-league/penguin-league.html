@@ -6276,7 +6276,12 @@ function endMatch() {
 
 // ----------------------------------------------------------- input
 const KEYS = new Set();
-const mouse = { l: false, r: false };
+// Keys and clicks pressed since the last tick read them: a tap released before the next
+// tick (shorter than a frame) still counts for one tick, so quick jumps are never lost.
+const TAPS = new Set();
+const TAP_WINDOW_MS = 100;   // reads further apart than this mean the sim was paused: drop old taps
+let lastInputRead = -Infinity;
+const mouse = { l: false, r: false, lTap: false, rTap: false };
 const touch = { jx: 0, jy: 0, jump: false, boost: false, slide: false, charge: false };
 const inMatch = () => M.state !== 'idle' && !M.demo;
 const BLOCK = new Set(['Space', 'Tab', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight']);
@@ -6285,17 +6290,18 @@ addEventListener('keydown', (e) => {
   if (inMatch() && BLOCK.has(e.code)) e.preventDefault();
   if (e.repeat) return;
   KEYS.add(e.code);
+  TAPS.add(e.code);
   if (!inMatch()) return;
   if (e.code === 'KeyC') toggleBallCam();
   if ((e.code === 'Escape' || e.code === 'KeyP') && M.state !== 'over') UI.togglePause();
   if (e.code === 'Tab') HUD.scoreboard(true);
 });
 addEventListener('keyup', (e) => { KEYS.delete(e.code); if (e.code === 'Tab') HUD.scoreboard(false); });
-addEventListener('blur', () => { KEYS.clear(); mouse.l = mouse.r = false; });
-canvas.addEventListener('mousedown', (e) => { if (!inMatch()) return; if (e.button === 0) mouse.l = true; if (e.button === 2) mouse.r = true; Sfx.init(); });
+addEventListener('blur', () => { KEYS.clear(); TAPS.clear(); mouse.l = mouse.r = mouse.lTap = mouse.rTap = false; });
+canvas.addEventListener('mousedown', (e) => { if (!inMatch()) return; if (e.button === 0) mouse.l = mouse.lTap = true; if (e.button === 2) mouse.r = mouse.rTap = true; Sfx.init(); });
 addEventListener('mouseup', (e) => { if (e.button === 0) mouse.l = false; if (e.button === 2) mouse.r = false; });
 canvas.addEventListener('contextmenu', (e) => e.preventDefault());
-let padPrev = {};
+const padPrev = { 3: false, 9: false };
 function readPad() {
   if (!navigator.getGamepads) return null;
   for (const gp of navigator.getGamepads()) if (gp && gp.connected) return gp;
@@ -6303,12 +6309,14 @@ function readPad() {
 }
 const dz = (v) => (Math.abs(v) < 0.15 ? 0 : (v - Math.sign(v) * 0.15) / 0.85);
 function readPlayerInput(c) {
-  const k = c.ctrl, K = (code) => KEYS.has(code);
+  const now = performance.now(), live = now - lastInputRead < TAP_WINDOW_MS;
+  lastInputRead = now;
+  const k = c.ctrl, K = (code) => KEYS.has(code) || (live && TAPS.has(code));
   let thr = (K('KeyW') || K('ArrowUp') ? 1 : 0) - (K('KeyS') || K('ArrowDown') ? 1 : 0);
   let st = (K('KeyD') || K('ArrowRight') ? 1 : 0) - (K('KeyA') || K('ArrowLeft') ? 1 : 0);
   const roll = 0;   // rolling is not possible
   let pitch = thr;
-  let jump = K('Space') || mouse.r, boost = K('ShiftLeft') || K('ShiftRight') || mouse.l, slide = K('KeyX'), charge = K('KeyF');
+  let jump = K('Space') || mouse.r || (live && mouse.rTap), boost = K('ShiftLeft') || K('ShiftRight') || mouse.l || (live && mouse.lTap), slide = K('KeyX'), charge = K('KeyF');
   const gp = readPad();
   if (gp) {
     const ax = gp.axes, bt = gp.buttons, val = (i) => (bt[i] ? (typeof bt[i] === 'object' ? bt[i].value : bt[i]) : 0), on = (i) => !!(bt[i] && bt[i].pressed);
@@ -6317,12 +6325,13 @@ function readPlayerInput(c) {
     jump = jump || on(0); boost = boost || on(1); slide = slide || on(2); charge = charge || on(5);
     if (on(3) && !padPrev[3]) toggleBallCam();
     if (on(9) && !padPrev[9] && M.state !== 'over') UI.togglePause();
-    padPrev = { 3: on(3), 9: on(9) };
+    padPrev[3] = on(3); padPrev[9] = on(9);
   }
   if (touch.jx || touch.jy) { st += touch.jx; thr += clamp(-touch.jy * 1.5, -1, 1); pitch += -touch.jy; }
   jump = jump || touch.jump; boost = boost || touch.boost; slide = slide || touch.slide; charge = charge || touch.charge;
   k.throttle = clamp(thr, -1, 1); k.steer = clamp(st, -1, 1); k.pitch = clamp(pitch, -1, 1); k.roll = clamp(roll, -1, 1);
   k.jump = jump; k.boost = boost; k.slide = slide; k.charge = charge;
+  TAPS.clear(); mouse.lTap = mouse.rTap = false;
 }
 function toggleBallCam() { save.settings.ballCam = !save.settings.ballCam; persist(); HUD.camChip(); }
 // touch controls
@@ -6851,7 +6860,7 @@ const UI = (() => {
   function togglePause() {
     if (!inMatch() || M.state === 'over') return;
     M.paused = !M.paused;
-    KEYS.clear(); mouse.l = mouse.r = false;
+    KEYS.clear(); TAPS.clear(); mouse.l = mouse.r = mouse.lTap = mouse.rTap = false;
     if (M.paused) show('pause'); else { show(null); canvas.focus(); }
   }
   function results() {
