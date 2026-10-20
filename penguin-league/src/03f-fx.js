@@ -361,6 +361,7 @@ void main(){
   const C = []; for (let i = 0; i < MAXC; i++) C.push({ on: false, p: new V3(), v: new V3(), q: new Q(), qt: new Q(), ax: new V3(), spin: 0, life: 0, max: 3, ph: 0, fr: 1, size: 0.5, shape: 0, r: 1, gg: 1, b: 1, land: false, gy: 0.04 });
   let ci = 0;
   function confetti(pos, n, colors, speed = 18) {
+    if (save.settings.reducedMotion) return;
     if (!fxHi()) n = Math.ceil(n * 0.6);
     const m = fxMouth(pos);
     for (let k = 0; k < n; k++) {
@@ -508,6 +509,8 @@ void main(){
     }
   }
   let warm = 3;   // draw every FX material on the first frames so shaders compile before the first goal
+  // upload only the live part of a particle buffer (the first n values), not all of it
+  function upTo(attr, n) { attr.clearUpdateRanges(); attr.addUpdateRange(0, n); attr.needsUpdate = true; }
   function update(dt) {
     fxSun.copy(sun.position).sub(sun.target.position).normalize();
     const hiQ = fxHi(), w = warm > 0;
@@ -531,7 +534,7 @@ void main(){
       pc[k * 3] = q.r; pc[k * 3 + 1] = q.gg; pc[k * 3 + 2] = q.b; pg[k] = q.glow; k++;
     }
     pMesh.count = oMesh.count = k; pMesh.visible = k > 0 || w; oMesh.visible = (k > 0 || w) && hiQ;
-    if (k) { pMesh.instanceMatrix.needsUpdate = true; pMesh.instanceColor.needsUpdate = true; pGlow.needsUpdate = true; }
+    if (k) { upTo(pMesh.instanceMatrix, k * 16); upTo(pMesh.instanceColor, k * 3); upTo(pGlow, k); }
     // sparkles
     k = 0;
     const sp4 = sPos.array, sc4 = sCol.array;
@@ -548,7 +551,7 @@ void main(){
       sc4[o] = q.r; sc4[o + 1] = q.gg; sc4[o + 2] = q.b; sc4[o + 3] = q.rot; k++;
     }
     sGeo.instanceCount = k; sMesh.visible = k > 0 || w;
-    if (k) { sPos.needsUpdate = true; sCol.needsUpdate = true; }
+    if (k) { upTo(sPos, k * 4); upTo(sCol, k * 4); }
     // confetti
     k = 0;
     const cp4 = cPos.array, cq4 = cRot.array, cc4 = cCol.array;
@@ -570,7 +573,7 @@ void main(){
       cc4[o] = q.r; cc4[o + 1] = q.gg; cc4[o + 2] = q.b; cc4[o + 3] = q.shape; k++;
     }
     cGeo.instanceCount = k; cMesh.visible = k > 0 || w;
-    if (k) { cPos.needsUpdate = true; cRot.needsUpdate = true; cCol.needsUpdate = true; }
+    if (k) { upTo(cPos, k * 4); upTo(cRot, k * 4); upTo(cCol, k * 4); }
     // comic bursts: pop with overshoot, wobble, drift up, puff out
     if (w) { for (const q of bursts) if (!q.on) q.s.visible = warm > 0; for (const r of rays) if (!r.userData.owner) r.visible = warm > 0; for (const q of rings) if (!q.on) q.m.visible = q.bub.visible = warm > 0; }
     for (let i = 0; i < bursts.length; i++) {
@@ -625,7 +628,8 @@ function puffBurst(pos, n, color, speed = 6, size = 0.6) {
   // bright bursts also throw a few glints
   fxCol.setHex(color);
   if (fxCol.r * 0.2126 + fxCol.g * 0.7152 + fxCol.b * 0.0722 > 0.5) {
-    for (let i = 0, m = Math.ceil(n * 0.3); i < m; i++) {
+    // (nG, not m: m is the goal-mouth direction from above, which the glints should fly along too)
+    for (let i = 0, nG = Math.ceil(n * 0.3); i < nG; i++) {
       const a = rand(0, Math.PI * 2), e = rand(0, 1.3), s = speed * rand(0.7, 1.3), vz = Math.sin(a) * Math.cos(e) * s;
       FX.spark(pos.x, pos.y, pos.z, Math.cos(a) * Math.cos(e) * s, Math.sin(e) * s, m ? m * Math.abs(vz) : vz, size * rand(0.5, 0.9), rand(0.45, 0.8), color === 0xffffff ? (Math.random() < 0.5 ? 0xfff4b8 : 0xffffff) : color, -3, 2.5);
     }

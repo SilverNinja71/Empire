@@ -598,7 +598,6 @@ function buildArena() {
   }
   for (const x of arenaFX.trash) x.dispose();
   arenaFX.trash = []; arenaFX.glow = [];
-  for (const pv of padViews) scene.remove(pv.g);
   padViews = [];
   const grp = new THREE.Group(); arenaGroup = grp; scene.add(grp);
   const own = (x) => { arenaFX.trash.push(x); return x; };
@@ -971,6 +970,8 @@ function arenaPadSys() {
   S.t = 0;
   for (const m of [...S.small.all, ...S.big.all, S.beam, S.spark]) { m.frustumCulled = false; if (m.isInstancedMesh) m.count = 0; grp.add(m); }
   S.beam.renderOrder = 2; S.spark.renderOrder = 3;
+  // the instanced meshes that animate every frame (the bases and rings only change when a pad is placed)
+  S.anim = [S.small.fish, S.small.fishOl, S.small.glow, S.big.fish, S.big.fishOl, S.big.glow, S.beam];
   arenaPads = S;
   return S;
 }
@@ -978,15 +979,15 @@ const _apM = new THREE.Matrix4(), _apZ = new THREE.Matrix4().makeScale(0, 0, 0),
 function makePadView(p, i) {
   const S = arenaPadSys(), k = M.pads.indexOf(p);
   const slot = k >= 0 ? M.pads.slice(0, k).filter((q) => q.big === p.big).length : typeof i === 'number' ? i : padViews.length;
-  const g = new THREE.Group(); g.position.set(p.x, 0, p.z); scene.add(g);
-  const fish = new THREE.Object3D(), disc = new THREE.Object3D(); g.add(fish, disc);
+  // fish only holds the animated pose (it isn't added to the scene; the instanced meshes draw the pads)
+  const fish = new THREE.Object3D();
   const K = p.big ? S.big : S.small;
   _apM.makeTranslation(p.x, 0, p.z);
   for (const m of [K.base, K.baseOl, K.ring]) m.setMatrixAt(slot, _apM);
   for (const m of [K.fish, K.fishOl, K.glow]) m.setMatrixAt(slot, _apZ);
   if (p.big) S.beam.setMatrixAt(slot, _apZ);
   for (const m of [...K.all, S.beam]) m.instanceMatrix.needsUpdate = true;
-  return { g, p, fish, disc, t: rand(0, 6), slot, on: p.active, pop: 1, out: 0 };
+  return { p, fish, t: rand(0, 6), slot, on: p.active, pop: 1, out: 0, prog: -1 };
 }
 function updatePadViews(dt) {
   const S = arenaPads; if (!S) return;
@@ -1018,7 +1019,8 @@ function updatePadViews(dt) {
       K.fish.setMatrixAt(i, _apM); K.fishOl.setMatrixAt(i, _apM);
     } else { K.fish.setMatrixAt(i, _apZ); K.fishOl.setMatrixAt(i, _apZ); }
     // glowing ring doubles as the recharge dial
-    K.prog.array[i] = p.active ? 1 : clamp(1 - p.t / (p.big ? 10 : 4), 0, 0.998);
+    const pg = p.active ? 1 : clamp(1 - p.t / (p.big ? 10 : 4), 0, 0.998);
+    if (pg !== v.prog) { v.prog = pg; K.prog.array[i] = pg; K.prog.needsUpdate = true; }
     const gs = p.active ? K.R * (p.big ? 3.4 : 2.2) * (0.94 + 0.06 * Math.sin(v.t * 4)) : 0;
     K.glow.setMatrixAt(i, gs > 0 ? _apM.compose(_apP.set(p.x, 0.03, p.z), _apQ.identity(), _apS.set(gs, 1, gs)) : _apZ);
     if (p.big) {
@@ -1029,7 +1031,6 @@ function updatePadViews(dt) {
       }
     }
   }
-  for (const m of [...S.small.all, ...S.big.all, S.beam]) m.instanceMatrix.needsUpdate = true;
-  S.small.prog.needsUpdate = S.big.prog.needsUpdate = true;
-  sp.needsUpdate = true;
+  for (let j = 0; j < S.anim.length; j++) S.anim[j].instanceMatrix.needsUpdate = true;
+  if (hi) sp.needsUpdate = true;
 }

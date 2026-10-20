@@ -636,7 +636,7 @@ class PenguinView {
     m.root.quaternion.slerpQuaternions(c.pq, c.q, alpha);
     this.t += dt;
     // far away the ink outlines would be sub-pixel and shimmer: drop them (with hysteresis)
-    const lod = save.settings.quality === 'high' ? 26 : 19, far = m.root.position.distanceToSquared(camera.position) > (this.far ? lod * lod : (lod + 3) * (lod + 3));
+    const lod = save.settings.quality !== 'low' ? 26 : 19, far = m.root.position.distanceToSquared(camera.position) > (this.far ? lod * lod : (lod + 3) * (lod + 3));
     if (far !== this.far) { this.far = far; for (const o of m.outlines) o.visible = !far; }
     const fs = c.v.dot(c.fwd), afs = Math.min(Math.abs(fs), 20), spd = c.v.length(), air = !c.onGround, boost = c.boosting, sup = c.supersonic;
     // lean into turns
@@ -695,7 +695,7 @@ class PenguinView {
       if (boost) { const k = 0.88 + Math.random() * 0.24; f.scale.set(k * (0.92 + Math.random() * 0.16), k * (0.92 + Math.random() * 0.16), k * (sup ? 1.5 : 1) * (0.85 + Math.random() * 0.3)); }
     }
     if (boost) {
-      this.trailAcc += dt * (save.settings.quality === 'high' ? 70 : 42);
+      this.trailAcc += dt * (save.settings.quality !== 'low' ? 70 : 42);
       m.root.updateMatrixWorld();
       while (this.trailAcc > 1) {
         this.trailAcc -= 1;

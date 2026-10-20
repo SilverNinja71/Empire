@@ -2,7 +2,21 @@
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700&family=Lilita+One&display=swap">
+<link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+<!-- fonts load without blocking the first paint (media=print swaps to all once loaded); fallbacks show until then -->
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700&family=Lilita+One&display=swap" media="print" onload="this.media='all'">
+<!-- the import map comes before the preloads below (browsers ignore an import map added after module loading starts) -->
+<script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.min.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"}}</script>
+<!-- Three.js and every add-on in its import graph download in parallel instead of one import at a time -->
+<link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.min.js" crossorigin>
+<link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/postprocessing/EffectComposer.js" crossorigin>
+<link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/postprocessing/RenderPass.js" crossorigin>
+<link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/postprocessing/UnrealBloomPass.js" crossorigin>
+<link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/postprocessing/ShaderPass.js" crossorigin>
+<link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/postprocessing/MaskPass.js" crossorigin>
+<link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/postprocessing/Pass.js" crossorigin>
+<link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/shaders/CopyShader.js" crossorigin>
+<link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/shaders/LuminosityHighPassShader.js" crossorigin>
 <style>
 /* Layout: full-bleed WebGL stadium; sticker-style HUD and menus float above it.
    Theme: glossy ice blocks with snow caps + icicles, frosted ice slabs, falling snow.
@@ -446,7 +460,6 @@ body.touch #hud-left{bottom:calc(192px + env(safe-area-inset-bottom,0px))}
   </div>
 </div>
 
-<script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"}}</script>
 <script type="module">
 // =====================================================================
 //  PENGUIN LEAGUE — core: utilities, game data, save file, audio
@@ -534,7 +547,11 @@ const DEFAULT_SAVE = {
   upgrades: { speed: 0, thrust: 0, tank: 0, flip: 0, kick: 0, grip: 0 },
   owned: { hat: ['none'], skin: ['classic'], trail: ['puff'] },
   equip: { hat: 'none', skin: 'classic', trail: 'puff' },
-  settings: { ballCam: true, fov: 110, camDist: 1, volume: 0.7, quality: 'high', hints: true, v2: true },
+  settings: {
+    ballCam: true, fov: 110, camDist: 1, volume: 0.7, quality: 'auto', hints: true, v2: true,
+    camShake: 0.5,                                                              // 0..1 (Camera shake 0-100%)
+    reducedMotion: !!(window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches),
+  },
   career: { played: 0, wins: 0, goals: 0, godWins: 0 },
   last: { mode: '1v1', opp: 'normal', mate: 'normal', len: 300, fair: false },
 };
@@ -814,7 +831,8 @@ function statsFromUpgrades(u) {
 // ----------------------------------------------------------- penguin body
 const RIDE_H = 0.32;
 const DIVE_T = 0.4, DIVE_DIP = 1.75;   // belly dive length (s) and dip rate (rad/s): ~20° dip, then level again
-const DIVE_KICK = 1.3;                 // extra hit power while diving (replaces the old flip's spin power)
+const DIVE_KICK = 1.3;
+const JUMP_BUFFER = 0.1;               // s: a jump pressed this long before it's allowed (landing, self-righting) fires on the first legal tick                 // extra hit power while diving (replaces the old flip's spin power)
 // stabilised air control limits: nose down (W), nose up (S, for aerials), turn rate, easing rate.
 // There is no roll: penguins always stay level side to side.
 const AIR_NOSE_DOWN = 0.6, AIR_NOSE_UP = 1.35, AIR_YAW_RATE = 3.7, AIR_LEVEL_RATE = 6;
@@ -842,7 +860,7 @@ class Penguin {
     this.v.set(0, 0, 0); this.w.set(0, 0, 0);
     this.boost = 33.3; this.onGround = true; this.airT = 0; this.jumped = false; this.doubleJumped = false;
     this.jumping = false; this.jumpT = 0; this.jumpGrace = 0; this.flipT = 0; this.rightT = 0; this.turtleT = 0;
-    this.prevJump = false; this.hitCd = 0; this.supersonic = false; this.boosting = false; this.touchingBad = false;
+    this.prevJump = false; this.jumpBuf = 0; this.hitCd = 0; this.supersonic = false; this.boosting = false; this.touchingBad = false;
     this.demolished = false; this.respawnT = 0; this.landImpact = 0; this.justLanded = false; this.lastTouchT = -10;
     this.charge = 0; this.chargeCd = 0; this.burstT = 0;
   }
@@ -883,7 +901,10 @@ function stepPenguin(c, dt, M) {
   else if (c.charge > 0) c.charge = Math.max(0, c.charge - dt / CHARGE_FADE);
   const bm = 1 + (BURST_K - 1) * Math.min(1, c.burstT / BURST_EASE);
   const sm = bm * (k.charge ? 1 - CHARGE_SLOW * c.charge : 1);   // top-speed multiplier
-  const jumpPressed = k.jump && !c.prevJump; c.prevJump = k.jump;
+  // a fresh press arms the jump buffer; whatever uses the press clears it
+  if (k.jump && !c.prevJump) c.jumpBuf = JUMP_BUFFER; else if (c.jumpBuf > 0) c.jumpBuf -= dt;
+  c.prevJump = k.jump;
+  const jumpPressed = c.jumpBuf > 0;
   c.hitCd -= dt; c.jumpGrace -= dt;
   const D = arenaD(c.p.x, c.p.y, c.p.z);
   arenaN(c.p.x, c.p.y, c.p.z, _n);
@@ -920,6 +941,7 @@ function stepPenguin(c, dt, M) {
     c.v.y -= G * dt;
     if (!(_n.y < -0.2 && Math.abs(fs) < 6)) c.v.addScaledVector(_n, -3.25 * dt);                  // sticky force
     if (jumpPressed) {
+      c.jumpBuf = 0;
       c.v.addScaledVector(c.up, S.jump);
       c.jumping = true; c.jumpT = 0; c.jumped = true; c.jumpGrace = 0.1; c.onGround = false;
       c.events.push('jump');
@@ -934,7 +956,7 @@ function stepPenguin(c, dt, M) {
     if (jumpPressed && !c.doubleJumped && (!c.jumped || c.airT < 1.25) && c.rightT <= 0 && !c.touchingBad) {
       const df = k.pitch, dr = k.steer;
       const mag = Math.hypot(df, dr);
-      c.doubleJumped = true; c.jumping = false;
+      c.doubleJumped = true; c.jumping = false; c.jumpBuf = 0;
       if (mag > 0.5) {
         const fx = df / mag, rx = dr / mag;
         _a.copy(c.fwd); _a.y = 0; if (_a.lengthSq() < 1e-4) _a.set(0, 0, 1); _a.normalize();
@@ -1018,7 +1040,7 @@ function stepPenguin(c, dt, M) {
           _a.multiplyScalar(1 / ax);
           const ang = Math.acos(clamp(up2, -1, 1));
           c.w.copy(_a).multiplyScalar(ang / 0.45);
-          c.rightT = 0.45; c.turtleT = 0; c.doubleJumped = true; c.airT = 2; c.jumpGrace = 0.05;
+          c.rightT = 0.45; c.turtleT = 0; c.doubleJumped = true; c.airT = 2; c.jumpGrace = 0.05; c.jumpBuf = 0;
         }
       } else c.turtleT = 0;
     } else if (c.onGround && D2 > RIDE_H && D2 < RIDE_H + 0.16) {
@@ -1171,7 +1193,9 @@ import { ShaderPass as gfxShaderPass } from 'three/addons/postprocessing/ShaderP
 
 const INK = 0x1b1d3a;
 const canvas = $('#gl');
-const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
+// High/Auto render through an MSAA target (see post-processing below), so the canvas itself only needs
+// antialiasing for Low, which draws straight to the screen (takes effect on the next page load)
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: save.settings.quality === 'low', powerPreference: 'high-performance' });
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.toneMapping = THREE.CustomToneMapping; renderer.toneMappingExposure = 1;
 renderer.setClearColor(0x8fd8ff);
@@ -1205,9 +1229,33 @@ function fitShadow() {
   sc.left = x0 - 1; sc.right = x1 + 1; sc.bottom = y0 - 1; sc.top = y1 + 1; sc.near = Math.max(0.5, -z1 - 10); sc.far = -z0 + 10; sc.updateProjectionMatrix();
 }
 const _gfxV2 = new THREE.Vector2();
+// Auto quality: High, with the render resolution stepped between AUTOQ.min and 1 of High's from measured frame times
+const AUTOQ = { scale: 1, min: 0.67, step: 0.11, ft: 1 / 60, t: 0, upT: 0, hold: {} };
+function autoQuality(realDt) {
+  if (save.settings.quality !== 'auto' || document.hidden || realDt <= 0 || realDt > 0.1) return;
+  AUTOQ.ft += (realDt - AUTOQ.ft) * 0.05; AUTOQ.t += realDt;
+  for (const k in AUTOQ.hold) { AUTOQ.hold[k] -= realDt; if (AUTOQ.hold[k] <= 0) delete AUTOQ.hold[k]; }
+  if (AUTOQ.t < 1.5) return;
+  AUTOQ.t = 0;
+  let next = AUTOQ.scale;
+  if (AUTOQ.ft > 1 / 54 && AUTOQ.scale > AUTOQ.min) { AUTOQ.hold[AUTOQ.scale.toFixed(2)] = 20; next = Math.max(AUTOQ.min, AUTOQ.scale - AUTOQ.step); AUTOQ.upT = 0; }
+  else if (AUTOQ.ft < 1 / 58) {
+    // keeping up (even if vsync-capped): after a few calm seconds, try one step sharper (not one that just failed)
+    AUTOQ.upT += 1.5;
+    const up = Math.min(1, AUTOQ.scale + AUTOQ.step);
+    if (AUTOQ.upT >= 4.5 && up > AUTOQ.scale && !AUTOQ.hold[up.toFixed(2)]) { next = up; AUTOQ.upT = 0; }
+  } else AUTOQ.upT = 0;
+  if (next !== AUTOQ.scale) { AUTOQ.scale = next; applyPixelRatio(); }
+}
+function applyPixelRatio() {
+  const q = save.settings.quality;
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, q === 'low' ? 1 : 1.5) * (q === 'auto' ? AUTOQ.scale : 1));
+  resize();
+}
 function applyQuality() {
-  const hi = save.settings.quality === 'high';
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, hi ? 1.5 : 1));
+  const hi = save.settings.quality !== 'low';
+  if (save.settings.quality !== 'auto') AUTOQ.scale = 1;
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, hi ? 1.5 : 1) * (save.settings.quality === 'auto' ? AUTOQ.scale : 1));
   renderer.shadowMap.enabled = hi; sun.castShadow = hi;
   const upd = (o) => { if (o.material) { (Array.isArray(o.material) ? o.material : [o.material]).forEach((m) => { m.needsUpdate = true; }); } };
   scene.traverse(upd);
@@ -2093,7 +2141,7 @@ class PenguinView {
     m.root.quaternion.slerpQuaternions(c.pq, c.q, alpha);
     this.t += dt;
     // far away the ink outlines would be sub-pixel and shimmer: drop them (with hysteresis)
-    const lod = save.settings.quality === 'high' ? 26 : 19, far = m.root.position.distanceToSquared(camera.position) > (this.far ? lod * lod : (lod + 3) * (lod + 3));
+    const lod = save.settings.quality !== 'low' ? 26 : 19, far = m.root.position.distanceToSquared(camera.position) > (this.far ? lod * lod : (lod + 3) * (lod + 3));
     if (far !== this.far) { this.far = far; for (const o of m.outlines) o.visible = !far; }
     const fs = c.v.dot(c.fwd), afs = Math.min(Math.abs(fs), 20), spd = c.v.length(), air = !c.onGround, boost = c.boosting, sup = c.supersonic;
     // lean into turns
@@ -2152,7 +2200,7 @@ class PenguinView {
       if (boost) { const k = 0.88 + Math.random() * 0.24; f.scale.set(k * (0.92 + Math.random() * 0.16), k * (0.92 + Math.random() * 0.16), k * (sup ? 1.5 : 1) * (0.85 + Math.random() * 0.3)); }
     }
     if (boost) {
-      this.trailAcc += dt * (save.settings.quality === 'high' ? 70 : 42);
+      this.trailAcc += dt * (save.settings.quality !== 'low' ? 70 : 42);
       m.root.updateMatrixWorld();
       while (this.trailAcc > 1) {
         this.trailAcc -= 1;
@@ -2823,7 +2871,6 @@ function buildArena() {
   }
   for (const x of arenaFX.trash) x.dispose();
   arenaFX.trash = []; arenaFX.glow = [];
-  for (const pv of padViews) scene.remove(pv.g);
   padViews = [];
   const grp = new THREE.Group(); arenaGroup = grp; scene.add(grp);
   const own = (x) => { arenaFX.trash.push(x); return x; };
@@ -3196,6 +3243,8 @@ function arenaPadSys() {
   S.t = 0;
   for (const m of [...S.small.all, ...S.big.all, S.beam, S.spark]) { m.frustumCulled = false; if (m.isInstancedMesh) m.count = 0; grp.add(m); }
   S.beam.renderOrder = 2; S.spark.renderOrder = 3;
+  // the instanced meshes that animate every frame (the bases and rings only change when a pad is placed)
+  S.anim = [S.small.fish, S.small.fishOl, S.small.glow, S.big.fish, S.big.fishOl, S.big.glow, S.beam];
   arenaPads = S;
   return S;
 }
@@ -3203,15 +3252,15 @@ const _apM = new THREE.Matrix4(), _apZ = new THREE.Matrix4().makeScale(0, 0, 0),
 function makePadView(p, i) {
   const S = arenaPadSys(), k = M.pads.indexOf(p);
   const slot = k >= 0 ? M.pads.slice(0, k).filter((q) => q.big === p.big).length : typeof i === 'number' ? i : padViews.length;
-  const g = new THREE.Group(); g.position.set(p.x, 0, p.z); scene.add(g);
-  const fish = new THREE.Object3D(), disc = new THREE.Object3D(); g.add(fish, disc);
+  // fish only holds the animated pose (it isn't added to the scene; the instanced meshes draw the pads)
+  const fish = new THREE.Object3D();
   const K = p.big ? S.big : S.small;
   _apM.makeTranslation(p.x, 0, p.z);
   for (const m of [K.base, K.baseOl, K.ring]) m.setMatrixAt(slot, _apM);
   for (const m of [K.fish, K.fishOl, K.glow]) m.setMatrixAt(slot, _apZ);
   if (p.big) S.beam.setMatrixAt(slot, _apZ);
   for (const m of [...K.all, S.beam]) m.instanceMatrix.needsUpdate = true;
-  return { g, p, fish, disc, t: rand(0, 6), slot, on: p.active, pop: 1, out: 0 };
+  return { p, fish, t: rand(0, 6), slot, on: p.active, pop: 1, out: 0, prog: -1 };
 }
 function updatePadViews(dt) {
   const S = arenaPads; if (!S) return;
@@ -3243,7 +3292,8 @@ function updatePadViews(dt) {
       K.fish.setMatrixAt(i, _apM); K.fishOl.setMatrixAt(i, _apM);
     } else { K.fish.setMatrixAt(i, _apZ); K.fishOl.setMatrixAt(i, _apZ); }
     // glowing ring doubles as the recharge dial
-    K.prog.array[i] = p.active ? 1 : clamp(1 - p.t / (p.big ? 10 : 4), 0, 0.998);
+    const pg = p.active ? 1 : clamp(1 - p.t / (p.big ? 10 : 4), 0, 0.998);
+    if (pg !== v.prog) { v.prog = pg; K.prog.array[i] = pg; K.prog.needsUpdate = true; }
     const gs = p.active ? K.R * (p.big ? 3.4 : 2.2) * (0.94 + 0.06 * Math.sin(v.t * 4)) : 0;
     K.glow.setMatrixAt(i, gs > 0 ? _apM.compose(_apP.set(p.x, 0.03, p.z), _apQ.identity(), _apS.set(gs, 1, gs)) : _apZ);
     if (p.big) {
@@ -3254,9 +3304,8 @@ function updatePadViews(dt) {
       }
     }
   }
-  for (const m of [...S.small.all, ...S.big.all, S.beam]) m.instanceMatrix.needsUpdate = true;
-  S.small.prog.needsUpdate = S.big.prog.needsUpdate = true;
-  sp.needsUpdate = true;
+  for (let j = 0; j < S.anim.length; j++) S.anim[j].instanceMatrix.needsUpdate = true;
+  if (hi) sp.needsUpdate = true;
 }
 // =====================================================================
 //  CROWD — little penguin fans in the stands (called from buildArena)
@@ -3705,7 +3754,7 @@ FRAME_HOOKS.push((dt, rdt) => {
     const near = sc.box.distanceToPoint(camera.position) < 30;
     if (near !== sc.near) { sc.near = near; for (const m of sc.hi) m.visible = near; for (const m of sc.lo) m.visible = !near; }
   }
-  if (M.ball) crowdX.uBall.value.lerp(M.ball.p, 1 - Math.exp(-4 * Math.min(0.1, rdt || 0.016)));
+  if (M.ball) crowdX.uBall.value.lerp(ballView.mesh.position, 1 - Math.exp(-4 * Math.min(0.1, rdt || 0.016)));   // the interpolated ball
   const s0 = M.score[0], s1 = M.score[1];
   if (s0 > L.s0) crowdX.uCheer.value.set(1, 0.15); else if (s1 > L.s1) crowdX.uCheer.value.set(0.15, 1);
   L.s0 = s0; L.s1 = s1;
@@ -4795,6 +4844,7 @@ void main(){
   const C = []; for (let i = 0; i < MAXC; i++) C.push({ on: false, p: new V3(), v: new V3(), q: new Q(), qt: new Q(), ax: new V3(), spin: 0, life: 0, max: 3, ph: 0, fr: 1, size: 0.5, shape: 0, r: 1, gg: 1, b: 1, land: false, gy: 0.04 });
   let ci = 0;
   function confetti(pos, n, colors, speed = 18) {
+    if (save.settings.reducedMotion) return;
     if (!fxHi()) n = Math.ceil(n * 0.6);
     const m = fxMouth(pos);
     for (let k = 0; k < n; k++) {
@@ -4942,6 +4992,8 @@ void main(){
     }
   }
   let warm = 3;   // draw every FX material on the first frames so shaders compile before the first goal
+  // upload only the live part of a particle buffer (the first n values), not all of it
+  function upTo(attr, n) { attr.clearUpdateRanges(); attr.addUpdateRange(0, n); attr.needsUpdate = true; }
   function update(dt) {
     fxSun.copy(sun.position).sub(sun.target.position).normalize();
     const hiQ = fxHi(), w = warm > 0;
@@ -4965,7 +5017,7 @@ void main(){
       pc[k * 3] = q.r; pc[k * 3 + 1] = q.gg; pc[k * 3 + 2] = q.b; pg[k] = q.glow; k++;
     }
     pMesh.count = oMesh.count = k; pMesh.visible = k > 0 || w; oMesh.visible = (k > 0 || w) && hiQ;
-    if (k) { pMesh.instanceMatrix.needsUpdate = true; pMesh.instanceColor.needsUpdate = true; pGlow.needsUpdate = true; }
+    if (k) { upTo(pMesh.instanceMatrix, k * 16); upTo(pMesh.instanceColor, k * 3); upTo(pGlow, k); }
     // sparkles
     k = 0;
     const sp4 = sPos.array, sc4 = sCol.array;
@@ -4982,7 +5034,7 @@ void main(){
       sc4[o] = q.r; sc4[o + 1] = q.gg; sc4[o + 2] = q.b; sc4[o + 3] = q.rot; k++;
     }
     sGeo.instanceCount = k; sMesh.visible = k > 0 || w;
-    if (k) { sPos.needsUpdate = true; sCol.needsUpdate = true; }
+    if (k) { upTo(sPos, k * 4); upTo(sCol, k * 4); }
     // confetti
     k = 0;
     const cp4 = cPos.array, cq4 = cRot.array, cc4 = cCol.array;
@@ -5004,7 +5056,7 @@ void main(){
       cc4[o] = q.r; cc4[o + 1] = q.gg; cc4[o + 2] = q.b; cc4[o + 3] = q.shape; k++;
     }
     cGeo.instanceCount = k; cMesh.visible = k > 0 || w;
-    if (k) { cPos.needsUpdate = true; cRot.needsUpdate = true; cCol.needsUpdate = true; }
+    if (k) { upTo(cPos, k * 4); upTo(cRot, k * 4); upTo(cCol, k * 4); }
     // comic bursts: pop with overshoot, wobble, drift up, puff out
     if (w) { for (const q of bursts) if (!q.on) q.s.visible = warm > 0; for (const r of rays) if (!r.userData.owner) r.visible = warm > 0; for (const q of rings) if (!q.on) q.m.visible = q.bub.visible = warm > 0; }
     for (let i = 0; i < bursts.length; i++) {
@@ -5059,7 +5111,8 @@ function puffBurst(pos, n, color, speed = 6, size = 0.6) {
   // bright bursts also throw a few glints
   fxCol.setHex(color);
   if (fxCol.r * 0.2126 + fxCol.g * 0.7152 + fxCol.b * 0.0722 > 0.5) {
-    for (let i = 0, m = Math.ceil(n * 0.3); i < m; i++) {
+    // (nG, not m: m is the goal-mouth direction from above, which the glints should fly along too)
+    for (let i = 0, nG = Math.ceil(n * 0.3); i < nG; i++) {
       const a = rand(0, Math.PI * 2), e = rand(0, 1.3), s = speed * rand(0.7, 1.3), vz = Math.sin(a) * Math.cos(e) * s;
       FX.spark(pos.x, pos.y, pos.z, Math.cos(a) * Math.cos(e) * s, Math.sin(e) * s, m ? m * Math.abs(vz) : vz, size * rand(0.5, 0.9), rand(0.45, 0.8), color === 0xffffff ? (Math.random() < 0.5 ? 0xfff4b8 : 0xffffff) : color, -3, 2.5);
     }
@@ -5069,13 +5122,35 @@ function puffBurst(pos, n, color, speed = 6, size = 0.6) {
 //  CAMERA + SHOWROOM — game camera, cinematic menu camera, garage/locker showroom
 // =====================================================================
 // ----------------------------------------------------------- game camera
-const CAM = { pos: new V3(0, 25, -70), yaw: 0, pitch: -0.1, shake: 0, cineA: 0, look: new V3(), lag: 0, hl: null };
-const CAM_SCALE = 1.33;   // penguin is ~1.33x the size of the classic car, so the classic camera numbers scale by this
+const CAM = { pos: new V3(0, 25, -70), yaw: 0, pitch: -0.1, pitchV: 0, shake: 0, shakeT: 0, back: 1, cineA: 0, look: new V3(), lag: 0, hl: null };
+// Everything that moves is SPEED_K (1.15x) bigger and faster than in Rocket League, so scaling RL's camera numbers
+// by the same factor gives exactly RL's on-screen speed (speed / camera distance). The old 1.33 sat ~13% too far back.
+const CAM_SCALE = SPEED_K;
+// how quickly the camera turns after the penguin: car cam is near-rigid (~25 ms), ball cam swivels at ~70 ms,
+// position smoothing just hides physics jitter, pitch follows the ball on a fast critically damped spring
+const CAM_YAW_RATE = 40, CAM_BALL_YAW_RATE = 14, CAM_POS_RATE = 40, CAM_PITCH_W = 16;
+const MAX_VFOV = 90;   // portrait screens: never stretch the vertical FOV past this (pull the camera back instead)
 const _cp = new V3(), _cb = new V3(), _cd = new V3(), _cn = new V3(), _cl = new V3();
 function setFov() {
+  // the setting is the horizontal FOV, like Rocket League; on tall screens the vertical FOV is capped and the
+  // camera backs off a little to keep the same amount of field in view (no fisheye)
   const hf = save.settings.fov * Math.PI / 180;
-  let vf = 2 * Math.atan(Math.tan(hf / 2) / Math.max(0.5, camera.aspect)) * 180 / Math.PI;
-  camera.fov = clamp(vf, 40, 120); camera.updateProjectionMatrix();   // keeps the horizontal FOV like Rocket League
+  const vf = 2 * Math.atan(Math.tan(hf / 2) / Math.max(0.3, camera.aspect)) * 180 / Math.PI;
+  const cap = Math.min(vf, MAX_VFOV);
+  CAM.back = clamp(Math.tan(vf * Math.PI / 360) / Math.tan(cap * Math.PI / 360), 1, 1.6);
+  camera.fov = Math.max(40, cap); camera.updateProjectionMatrix();
+}
+// camera shake: smooth noise (a few sines) with decaying amplitude, scaled by the Camera shake setting;
+// none at all under Reduced motion
+const shakeAmt = () => (save.settings.reducedMotion ? 0 : save.settings.camShake * 2);
+function applyShake(dt) {
+  if (CAM.shake <= 0) return;
+  CAM.shake = Math.max(0, CAM.shake - dt * 1.6); CAM.shakeT += dt;
+  const s = CAM.shake * CAM.shake * 0.35 * shakeAmt(), t = CAM.shakeT;
+  if (s <= 0) return;
+  camera.position.x += s * (Math.sin(t * 37.1) + Math.sin(t * 23.3 + 1.7)) * 0.5;
+  camera.position.y += s * (Math.sin(t * 41.7 + 0.6) + Math.sin(t * 19.9 + 2.9)) * 0.5;
+  camera.position.z += s * (Math.sin(t * 31.3 + 2.2) + Math.sin(t * 27.1 + 0.4)) * 0.5;
 }
 function keepInside(p, margin) {
   const d = arenaD(p.x, p.y, p.z);
@@ -5112,7 +5187,7 @@ function highlightCamera(dt, alpha) {
   _hf.lerpVectors(_hs, _hg, 0.45 + 0.4 * ed); _hf.y = Math.max(1, _hf.y);
   h.look.lerp(_hf, 1 - Math.exp(-dt * 6));
   camera.position.copy(CAM.pos);
-  if (CAM.shake > 0) { CAM.shake = Math.max(0, CAM.shake - dt * 1.6); const s = CAM.shake * CAM.shake * 0.6; camera.position.x += rand(-s, s); camera.position.y += rand(-s, s); camera.position.z += rand(-s, s); }
+  applyShake(dt);
   camera.lookAt(h.look);
   camera.fov = clamp(camera.fov * lerp(1, GOAL_HL.zoom, ed), 20, 120); camera.updateProjectionMatrix();
 }
@@ -5138,29 +5213,31 @@ function updateCamera(dt, alpha) {
   let tx, tz;
   if (ballCam) { tx = _cb.x - _cp.x; tz = _cb.z - _cp.z; }
   else {
-    const hv = Math.hypot(pl.v.x, pl.v.z);
-    if (pl.onGround && hv > 3 && pl.v.dot(pl.fwd) > 0) { tx = pl.v.x; tz = pl.v.z; }
-    else { tx = pl.fwd.x; tz = pl.fwd.z; if (Math.hypot(tx, tz) < 0.3) { tx = pl.v.x; tz = pl.v.z; } }
+    // car cam follows where the penguin faces (not where it's sliding), so powerslides don't swing the view
+    tx = pl.fwd.x; tz = pl.fwd.z;
+    if (Math.hypot(tx, tz) < 0.3) { tx = pl.v.x; tz = pl.v.z; }
   }
-  if (Math.hypot(tx, tz) > 0.05) CAM.yaw = lerpAngle(CAM.yaw, Math.atan2(tx, tz), 1 - Math.exp(-dt * (ballCam ? 10 : 7)));
+  if (Math.hypot(tx, tz) > 0.05) CAM.yaw = lerpAngle(CAM.yaw, Math.atan2(tx, tz), 1 - Math.exp(-dt * (ballCam ? CAM_BALL_YAW_RATE : CAM_YAW_RATE)));
   // Rocket League pro camera (distance 270, height 100, angle -3°, stiffness 0.45) scaled to the penguin;
   // like RL, a soft camera lets the penguin pull ahead a little at speed
   CAM.lag = damp(CAM.lag, (1 - 0.45) * 0.45 * clamp(Math.max(0, pl.v.dot(pl.fwd)) / VMAX, 0, 1), 3, dt);
-  const dist = 2.7 * CAM_SCALE * save.settings.camDist * (1 + CAM.lag), height = 1.0 * CAM_SCALE * (0.6 + 0.4 * save.settings.camDist);
+  const dist = 2.7 * CAM_SCALE * save.settings.camDist * (1 + CAM.lag) * CAM.back, height = 1.0 * CAM_SCALE * (0.6 + 0.4 * save.settings.camDist) * CAM.back;
   const sx = Math.sin(CAM.yaw), sz = Math.cos(CAM.yaw);
   _cd.set(_cp.x - sx * dist, _cp.y + height, _cp.z - sz * dist);
   keepInside(_cd, 0.7);
   if (pl.demolished) _cd.copy(CAM.pos);
-  CAM.pos.lerp(_cd, 1 - Math.exp(-dt * 22));
+  CAM.pos.lerp(_cd, 1 - Math.exp(-dt * CAM_POS_RATE));
   let pitchT = -0.052;   // camera angle -3°
   if (ballCam) {
     const dx = _cb.x - CAM.pos.x, dz = _cb.z - CAM.pos.z, dy = _cb.y - (CAM.pos.y - 0.6);
     pitchT = clamp(Math.atan2(dy, Math.hypot(dx, dz)), -0.4, 0.62) - 0.06;
   }
-  CAM.pitch = damp(CAM.pitch, pitchT, 7, dt);
+  // exact critically damped spring step (stable for any dt)
+  const y0 = CAM.pitch - pitchT, e = Math.exp(-CAM_PITCH_W * dt), k = (CAM.pitchV + CAM_PITCH_W * y0) * dt;
+  CAM.pitch = pitchT + (y0 + k) * e; CAM.pitchV = (CAM.pitchV - CAM_PITCH_W * k) * e;
   _cl.set(CAM.pos.x + sx * Math.cos(CAM.pitch) * 10, CAM.pos.y + Math.sin(CAM.pitch) * 10, CAM.pos.z + sz * Math.cos(CAM.pitch) * 10);
   camera.position.copy(CAM.pos);
-  if (CAM.shake > 0) { CAM.shake = Math.max(0, CAM.shake - dt * 1.6); const s = CAM.shake * CAM.shake * 0.6; camera.position.x += rand(-s, s); camera.position.y += rand(-s, s); camera.position.z += rand(-s, s); }
+  applyShake(dt);
   camera.lookAt(_cl);
 }
 
@@ -6249,9 +6326,13 @@ function onGoal(team) {
   else {
     // slow-motion highlight: GOAL_HL.dur real seconds at GOAL_TS speed with the ball still rippling the net
     // while the camera zooms toward it and the scorer, then a short beat and the kickoff reset
-    M.stateT = GOAL_HL.dur * GOAL_TS + 0.45;
-    M.slowmo = GOAL_HL.dur; CAM.shake = 1; flash();
-    startHighlight(team, scorer); cine(true);
+    // Reduced motion: no slow motion, no camera swoop, no shake and no white flash, just a short pause
+    if (save.settings.reducedMotion) M.stateT = 1.6;
+    else {
+      M.stateT = GOAL_HL.dur * GOAL_TS + 0.45;
+      M.slowmo = GOAL_HL.dur; CAM.shake = 1; flash();
+      startHighlight(team, scorer); cine(true);
+    }
     Sfx.goal();
     const who = scorer === M.player ? 'You scored!' : scorer ? `${esc(scorer.name)} scores!` : 'Own goal!';
     banner('GOAL!', who + (assist ? ` · assist ${esc(assist.name)}` : ''), team ? 'orange' : 'blue', 1.7);
@@ -6275,14 +6356,32 @@ function endMatch() {
 }
 
 // ----------------------------------------------------------- input
+// Buttons are latched: every press is counted the moment it happens (keyboard, mouse and touch events, and the
+// gamepad, which is polled on every animation frame), and each physics tick uses the presses up one at a time.
+// So a tap that starts and ends between two ticks still gives one tick with the button down, and a fast double
+// tap still gives two separate presses (a jump and then a dive).
 const KEYS = new Set();
-// Keys and clicks pressed since the last tick read them: a tap released before the next
-// tick (shorter than a frame) still counts for one tick, so quick jumps are never lost.
-const TAPS = new Set();
-const TAP_WINDOW_MS = 100;   // reads further apart than this mean the sim was paused: drop old taps
-let lastInputRead = -Infinity;
-const mouse = { l: false, r: false, lTap: false, rTap: false };
+const mouse = { l: false, r: false };
 const touch = { jx: 0, jy: 0, jump: false, boost: false, slide: false, charge: false };
+const ACTIONS = ['jump', 'boost', 'slide', 'charge'];
+const LATCH = { jump: { n: 0, out: false }, boost: { n: 0, out: false }, slide: { n: 0, out: false }, charge: { n: 0, out: false } };
+const KEY_ACTION = { Space: 'jump', ShiftLeft: 'boost', ShiftRight: 'boost', KeyX: 'slide', KeyF: 'charge' };
+const PAD_ACTION = { 0: 'jump', 1: 'boost', 2: 'slide', 5: 'charge' };   // A, B, X, RB
+const playing = () => inMatch() && !M.paused;
+function latchPress(a) { if (playing()) LATCH[a].n++; }
+function clearInput() {
+  KEYS.clear(); mouse.l = mouse.r = false;
+  for (const a of ACTIONS) { LATCH[a].n = 0; LATCH[a].out = false; }
+}
+// one tick's value of a button: queued presses first (with a released tick between two of them), then the held state
+function latched(a, held) {
+  const L = LATCH[a];
+  if (L.n > 0) {
+    if (L.out) L.out = false;
+    else { L.n--; L.out = true; }
+  } else L.out = held;
+  return L.out;
+}
 const inMatch = () => M.state !== 'idle' && !M.demo;
 const BLOCK = new Set(['Space', 'Tab', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight']);
 addEventListener('keydown', (e) => {
@@ -6290,48 +6389,62 @@ addEventListener('keydown', (e) => {
   if (inMatch() && BLOCK.has(e.code)) e.preventDefault();
   if (e.repeat) return;
   KEYS.add(e.code);
-  TAPS.add(e.code);
   if (!inMatch()) return;
+  if (KEY_ACTION[e.code]) latchPress(KEY_ACTION[e.code]);
   if (e.code === 'KeyC') toggleBallCam();
   if ((e.code === 'Escape' || e.code === 'KeyP') && M.state !== 'over') UI.togglePause();
   if (e.code === 'Tab') HUD.scoreboard(true);
 });
 addEventListener('keyup', (e) => { KEYS.delete(e.code); if (e.code === 'Tab') HUD.scoreboard(false); });
-addEventListener('blur', () => { KEYS.clear(); TAPS.clear(); mouse.l = mouse.r = mouse.lTap = mouse.rTap = false; });
-canvas.addEventListener('mousedown', (e) => { if (!inMatch()) return; if (e.button === 0) mouse.l = mouse.lTap = true; if (e.button === 2) mouse.r = mouse.rTap = true; Sfx.init(); });
+// switching to another window or tab pauses a match (and drops any held keys)
+function autoPause() { if (inMatch() && !M.paused && M.state !== 'over') UI.togglePause(); }
+addEventListener('blur', () => { clearInput(); autoPause(); });
+document.addEventListener('visibilitychange', () => { if (document.hidden) { clearInput(); autoPause(); } });
+canvas.addEventListener('mousedown', (e) => {
+  if (!inMatch()) return;
+  if (e.button === 0) { mouse.l = true; latchPress('boost'); }
+  if (e.button === 2) { mouse.r = true; latchPress('jump'); }
+  Sfx.init();
+});
 addEventListener('mouseup', (e) => { if (e.button === 0) mouse.l = false; if (e.button === 2) mouse.r = false; });
 canvas.addEventListener('contextmenu', (e) => e.preventDefault());
-const padPrev = { 3: false, 9: false };
-function readPad() {
-  if (!navigator.getGamepads) return null;
-  for (const gp of navigator.getGamepads()) if (gp && gp.connected) return gp;
-  return null;
+// gamepad: polled once per animation frame (menus and pause included), so Start can both pause and unpause
+const PAD = { on: false, axes: [0, 0, 0, 0], btn: new Float32Array(17), prev: new Uint8Array(17) };
+function pollPad() {
+  let gp = null;
+  if (navigator.getGamepads) for (const g of navigator.getGamepads()) if (g && g.connected) { gp = g; break; }
+  PAD.on = !!gp;
+  if (!gp) { PAD.prev.fill(0); return; }
+  for (let i = 0; i < 4; i++) PAD.axes[i] = gp.axes[i] || 0;
+  for (let i = 0; i < PAD.btn.length; i++) {
+    const b = gp.buttons[i], v = b ? (typeof b === 'object' ? b.value : b) : 0, on = b ? (typeof b === 'object' ? b.pressed : b > 0.5) : false;
+    PAD.btn[i] = v;
+    if (on && !PAD.prev[i]) {
+      if (PAD_ACTION[i]) latchPress(PAD_ACTION[i]);
+      if (i === 3 && playing()) toggleBallCam();
+      if (i === 9 && inMatch() && M.state !== 'over') UI.togglePause();
+    }
+    PAD.prev[i] = on ? 1 : 0;
+  }
 }
+const padOn = (i) => PAD.prev[i] === 1;
 const dz = (v) => (Math.abs(v) < 0.15 ? 0 : (v - Math.sign(v) * 0.15) / 0.85);
 function readPlayerInput(c) {
-  const now = performance.now(), live = now - lastInputRead < TAP_WINDOW_MS;
-  lastInputRead = now;
-  const k = c.ctrl, K = (code) => KEYS.has(code) || (live && TAPS.has(code));
+  const k = c.ctrl, K = (code) => KEYS.has(code);
   let thr = (K('KeyW') || K('ArrowUp') ? 1 : 0) - (K('KeyS') || K('ArrowDown') ? 1 : 0);
   let st = (K('KeyD') || K('ArrowRight') ? 1 : 0) - (K('KeyA') || K('ArrowLeft') ? 1 : 0);
   const roll = 0;   // rolling is not possible
   let pitch = thr;
-  let jump = K('Space') || mouse.r || (live && mouse.rTap), boost = K('ShiftLeft') || K('ShiftRight') || mouse.l || (live && mouse.lTap), slide = K('KeyX'), charge = K('KeyF');
-  const gp = readPad();
-  if (gp) {
-    const ax = gp.axes, bt = gp.buttons, val = (i) => (bt[i] ? (typeof bt[i] === 'object' ? bt[i].value : bt[i]) : 0), on = (i) => !!(bt[i] && bt[i].pressed);
-    st += dz(ax[0] || 0); pitch += -dz(ax[1] || 0);
-    thr += val(7) - val(6);
-    jump = jump || on(0); boost = boost || on(1); slide = slide || on(2); charge = charge || on(5);
-    if (on(3) && !padPrev[3]) toggleBallCam();
-    if (on(9) && !padPrev[9] && M.state !== 'over') UI.togglePause();
-    padPrev[3] = on(3); padPrev[9] = on(9);
+  let jump = K('Space') || mouse.r, boost = K('ShiftLeft') || K('ShiftRight') || mouse.l, slide = K('KeyX'), charge = K('KeyF');
+  if (PAD.on) {
+    st += dz(PAD.axes[0]); pitch += -dz(PAD.axes[1]);
+    thr += PAD.btn[7] - PAD.btn[6];
+    jump = jump || padOn(0); boost = boost || padOn(1); slide = slide || padOn(2); charge = charge || padOn(5);
   }
   if (touch.jx || touch.jy) { st += touch.jx; thr += clamp(-touch.jy * 1.5, -1, 1); pitch += -touch.jy; }
   jump = jump || touch.jump; boost = boost || touch.boost; slide = slide || touch.slide; charge = charge || touch.charge;
   k.throttle = clamp(thr, -1, 1); k.steer = clamp(st, -1, 1); k.pitch = clamp(pitch, -1, 1); k.roll = clamp(roll, -1, 1);
-  k.jump = jump; k.boost = boost; k.slide = slide; k.charge = charge;
-  TAPS.clear(); mouse.lTap = mouse.rTap = false;
+  k.jump = latched('jump', jump); k.boost = latched('boost', boost); k.slide = latched('slide', slide); k.charge = latched('charge', charge);
 }
 function toggleBallCam() { save.settings.ballCam = !save.settings.ballCam; persist(); HUD.camChip(); }
 // touch controls
@@ -6349,7 +6462,7 @@ function toggleBallCam() { save.settings.ballCam = !save.settings.ballCam; persi
   joy.addEventListener('pointerup', up); joy.addEventListener('pointercancel', up);
   for (const [id, key] of [['t-jump', 'jump'], ['t-boost', 'boost'], ['t-slide', 'slide'], ['t-shot', 'charge']]) {
     const el = $('#' + id);
-    el.addEventListener('pointerdown', (e) => { touch[key] = true; el.classList.add('on'); el.setPointerCapture(e.pointerId); e.preventDefault(); });
+    el.addEventListener('pointerdown', (e) => { touch[key] = true; latchPress(key); el.classList.add('on'); el.setPointerCapture(e.pointerId); e.preventDefault(); });
     const off = () => { touch[key] = false; el.classList.remove('on'); };
     el.addEventListener('pointerup', off); el.addEventListener('pointercancel', off);
   }
@@ -6363,6 +6476,8 @@ const HUD = (() => {
   const boostBox = $('#boost'), boostLbl = $('#boost .num small'), chargeEl = $('#charge'), chargeFill = $('#charge i');
   const ARC = 2 * Math.PI * 43 * 0.75;
   let hintT = 0, lastBoost = -1, lastClock = '', lastCharge = -1, lastBurst = null, chargeFull = false;
+  // last values written to the page, so the HUD only touches the DOM when something visible changes
+  let lastS0 = -1, lastS1 = -1, lastSpeed = -1, lastArrow = '';
   chip.addEventListener('click', () => { toggleBallCam(); chip.blur(); });
   $('#btn-pause').addEventListener('click', () => UI.togglePause());
   const _pv = new V3();
@@ -6372,6 +6487,7 @@ const HUD = (() => {
       hintT = save.settings.hints ? 14 : 0; hint.style.opacity = hintT > 0 ? 1 : 0; hint.hidden = hintT <= 0;
       $('#touch').hidden = !document.body.classList.contains('touch');
       this.camChip(); lastBoost = -1; lastClock = ''; lastCharge = -1; lastBurst = null; chargeFull = false;
+      lastS0 = lastS1 = lastSpeed = -1; lastArrow = '';
       s0.textContent = '0'; s1.textContent = '0';
     },
     camChip() { chip.setAttribute('aria-pressed', save.settings.ballCam ? 'true' : 'false'); chip.textContent = `BALL CAM ${save.settings.ballCam ? 'ON' : 'OFF'} · C`; },
@@ -6382,7 +6498,8 @@ const HUD = (() => {
     },
     update(dt) {
       if (!inMatch()) return;
-      s0.textContent = M.score[0]; s1.textContent = M.score[1];
+      if (M.score[0] !== lastS0) { lastS0 = M.score[0]; s0.textContent = lastS0; }
+      if (M.score[1] !== lastS1) { lastS1 = M.score[1]; s1.textContent = lastS1; }
       const ct = M.overtime ? fmtUp(M.otTime) : fmtClock(M.clock);
       if (ct !== lastClock) { time.textContent = ct; lastClock = ct; ot.hidden = !M.overtime; }
       const p = M.player;
@@ -6392,7 +6509,8 @@ const HUD = (() => {
         arc.setAttribute('stroke-dasharray', `${(ARC * p.boost / p.stats.boostMax).toFixed(1)} 999`);
         arc.setAttribute('stroke', p.boost > 70 ? '#ff8a1f' : p.boost > 30 ? '#ffd23f' : '#ff5fa8');
       }
-      speed.style.opacity = p.supersonic && !p.demolished ? 1 : 0;
+      const so = p.supersonic && !p.demolished ? 1 : 0;
+      if (so !== lastSpeed) { lastSpeed = so; speed.style.opacity = so; }
       // charged-shot meter (ready once it passes CHARGE_MIN) and the crystal speed-burst glow on the boost dial
       const cq = Math.round(p.charge * 50);
       if (cq !== lastCharge) {
@@ -6404,9 +6522,10 @@ const HUD = (() => {
       const burst = p.burstT > 0;
       if (burst !== lastBurst) { lastBurst = burst; boostBox.classList.toggle('burst', burst); boostLbl.textContent = burst ? 'BURST' : 'BOOST'; }
       if (hintT > 0) { hintT -= dt; if (hintT <= 0) { hint.style.opacity = 0; setTimeout(() => { hint.hidden = true; }, 700); } }
-      // off-screen ball arrow
+      // off-screen ball arrow (from the interpolated ball the player sees, not the raw physics state)
+      let shown = false;
       if (!M.ballHidden) {
-        _pv.copy(M.ball.p).project(camera);
+        _pv.copy(ballView.mesh.position).project(camera);
         let x = _pv.x, y = _pv.y;
         const behind = _pv.z > 1;
         if (behind) { x = -x; y = -y; }
@@ -6414,10 +6533,12 @@ const HUD = (() => {
           const a = Math.atan2(y, x), ex = Math.cos(a), ey = Math.sin(a);
           const s = Math.min(0.9 / Math.abs(ex || 1e-3), 0.85 / Math.abs(ey || 1e-3));
           const sx = (ex * s * 0.5 + 0.5) * innerWidth, sy = (-ey * s * 0.5 + 0.5) * innerHeight;
-          arrow.style.display = 'block';
-          arrow.style.transform = `translate(${sx}px, ${sy}px) rotate(${Math.atan2(ex, ey)}rad)`;
-        } else arrow.style.display = 'none';
-      } else arrow.style.display = 'none';
+          const tf = `translate(${sx.toFixed(1)}px, ${sy.toFixed(1)}px) rotate(${Math.atan2(ex, ey).toFixed(3)}rad)`;
+          if (tf !== lastArrow) { lastArrow = tf; arrow.style.transform = tf; }
+          shown = true;
+        }
+      }
+      if (shown !== (arrow.style.display === 'block')) arrow.style.display = shown ? 'block' : 'none';
     },
   };
 })();
@@ -6448,10 +6569,22 @@ function statsTable() {
 
 // ----------------------------------------------------------- frame loop
 let lastFrame = performance.now(), acc = 0;
+const MAX_CATCHUP = 30;   // ticks per frame at most (0.25 s at 120 Hz); below ~4 fps the game slows down rather than freezing
+let demoAcc = 0;
+const DEMO_FPS = 30;   // the demo match behind the menus only needs to be a moving backdrop
 function frame(now) {
   requestAnimationFrame(frame);
   let dt = (now - lastFrame) / 1000; lastFrame = now;
-  if (dt > 0.1) dt = 0.1; if (dt < 0) dt = 0;
+  if (dt > 0.25) dt = 0.25; if (dt < 0) dt = 0;
+  pollPad();
+  if (M.demo && !UI.showroomOn()) {
+    demoAcc += dt;
+    if (demoAcc < 1 / (DEMO_FPS + 1)) return;
+    dt = Math.min(0.25, demoAcc); demoAcc = 0;
+  } else {
+    demoAcc = 0;
+    autoQuality(dt);
+  }
   tick(dt);
 }
 function tick(dt) {
@@ -6461,8 +6594,9 @@ function tick(dt) {
     let ts = 1;
     if (M.slowmo > 0) { M.slowmo -= dt; ts = GOAL_TS; }
     acc += dt * ts;
-    let n = 0; while (acc >= DT && n < 12) { simTick(); acc -= DT; n++; }
-    if (n >= 12) acc = 0;
+    // catch up after a slow frame (up to MAX_CATCHUP ticks, ~0.25 s), then drop the rest instead of spiralling
+    let n = 0; while (acc >= DT && n < MAX_CATCHUP) { simTick(); acc -= DT; n++; }
+    if (n >= MAX_CATCHUP) acc = 0;
   }
   const alpha = clamp(acc / DT, 0, 1);
   const fdt = running ? dt * (M.slowmo > 0 ? GOAL_TS : 1) : 0;
@@ -6723,7 +6857,9 @@ const UI = (() => {
           <div class="setrow"><label for="set-fov">Field of view<small>${s.fov}° horizontal (pros use 110°)</small></label><input id="set-fov" type="range" min="60" max="110" step="1" value="${s.fov}" style="--v:${rangePct(s.fov, 60, 110)}"></div>
           <div class="setrow"><label for="set-dist">Camera distance<small>${Math.round(s.camDist * 100)}%</small></label><input id="set-dist" type="range" min="0.75" max="1.5" step="0.05" value="${s.camDist}" style="--v:${rangePct(s.camDist, 0.75, 1.5)}"></div>
           <div class="setrow"><label for="set-vol">Volume<small>${Math.round(s.volume * 100)}%</small></label><input id="set-vol" type="range" min="0" max="1" step="0.05" value="${s.volume}" style="--v:${rangePct(s.volume, 0, 1)}"></div>
-          <div class="setrow"><label>Graphics<small>Low turns off shadows and lowers resolution for older devices.</small></label><div class="chips"><button class="chip" data-q="high" ${sel(s.quality === 'high')} type="button">High</button><button class="chip" data-q="low" ${sel(s.quality === 'low')} type="button">Low</button></div></div>
+          <div class="setrow"><label for="set-shake">Camera shake<small>${Math.round(s.camShake * 100)}%</small></label><input id="set-shake" type="range" min="0" max="1" step="0.05" value="${s.camShake}" style="--v:${rangePct(s.camShake, 0, 1)}"></div>
+          <div class="setrow"><label for="set-motion">Reduced motion<small>No camera shake, goal slow motion, white flash or confetti.</small></label><button class="switch" id="set-motion" role="switch" aria-checked="${s.reducedMotion}" type="button"><span class="knob"></span><span class="lbl">${s.reducedMotion ? 'On' : 'Off'}</span></button></div>
+          <div class="setrow"><label>Graphics<small>Auto keeps it smooth by lowering the resolution when needed. Low turns off shadows and effects for older devices.</small></label><div class="chips"><button class="chip" data-q="auto" ${sel(s.quality === 'auto')} type="button">Auto</button><button class="chip" data-q="high" ${sel(s.quality === 'high')} type="button">High</button><button class="chip" data-q="low" ${sel(s.quality === 'low')} type="button">Low</button></div></div>
           <div class="setrow"><label for="set-hints">Control hints<small>Shows the key list for the first seconds of a match.</small></label><button class="switch" id="set-hints" role="switch" aria-checked="${s.hints}" type="button"><span class="knob"></span><span class="lbl">${s.hints ? 'On' : 'Off'}</span></button></div>
           <div class="setrow"><label>Reset progress<small>Clears fish, upgrades, cosmetics and career stats on this device.</small></label><div><button class="btn sm ${resetArmed ? 'pink' : 'white'}" id="set-reset" type="button">${resetArmed ? 'Tap again to erase' : 'Reset save'}</button></div></div>
         </div></div>`;
@@ -6816,6 +6952,7 @@ const UI = (() => {
     }
     if (t.id === 'set-ballcam') { save.settings.ballCam = !save.settings.ballCam; persist(); render.settings(); return; }
     if (t.id === 'set-hints') { save.settings.hints = !save.settings.hints; persist(); render.settings(); return; }
+    if (t.id === 'set-motion') { save.settings.reducedMotion = !save.settings.reducedMotion; persist(); render.settings(); return; }
     if (t.dataset.q) { save.settings.quality = t.dataset.q; persist(); applyQuality(); $('#menu-bg').classList.toggle('lowq', t.dataset.q === 'low'); render.settings(); return; }
     if (t.id === 'set-reset') {
       if (!resetArmed) { resetArmed = true; render.settings(); return; }
@@ -6834,6 +6971,7 @@ const UI = (() => {
     const t = e.target, s = save.settings;
     if (t.id === 'set-fov') { s.fov = +t.value; t.previousElementSibling.querySelector('small').textContent = `${s.fov}° horizontal (pros use 110°)`; }
     else if (t.id === 'set-dist') { s.camDist = +t.value; t.previousElementSibling.querySelector('small').textContent = `${Math.round(s.camDist * 100)}%`; }
+    else if (t.id === 'set-shake') { s.camShake = +t.value; t.previousElementSibling.querySelector('small').textContent = `${Math.round(s.camShake * 100)}%`; }
     else if (t.id === 'set-vol') { s.volume = +t.value; Sfx.init(); Sfx.setVolume(s.volume); t.previousElementSibling.querySelector('small').textContent = `${Math.round(s.volume * 100)}%`; }
     else return;
     t.style.setProperty('--v', rangePct(+t.value, +t.min, +t.max));
@@ -6860,7 +6998,7 @@ const UI = (() => {
   function togglePause() {
     if (!inMatch() || M.state === 'over') return;
     M.paused = !M.paused;
-    KEYS.clear(); TAPS.clear(); mouse.l = mouse.r = mouse.lTap = mouse.rTap = false;
+    clearInput();
     if (M.paused) show('pause'); else { show(null); canvas.focus(); }
   }
   function results() {
@@ -6902,12 +7040,12 @@ function startDemo() {
 
 // ----------------------------------------------------------- boot
 async function boot() {
-  try {
-    await Promise.race([document.fonts.load('48px "Lilita One"'), new Promise((r) => setTimeout(r, 2500))]);
-  } catch (e) { /* font fallback is fine */ }
+  // no waiting for the web fonts: name tags, badges and arena signs redraw themselves when the fonts arrive
   buildShowroom();
   applyQuality();
   startDemo();
+  // compile every shader in the arena now (in the background), so the first kickoff doesn't hitch
+  if (renderer.compileAsync) renderer.compileAsync(scene, camera).catch(() => {});
   UI.show('title');
   const ld = $('#loading'); ld.style.transition = 'opacity .5s'; ld.style.opacity = 0; setTimeout(() => { ld.hidden = true; }, 500);
   requestAnimationFrame((t) => { lastFrame = t; frame(t); });
@@ -6921,7 +7059,7 @@ boot().catch((err) => {
 });
 // debugging handle (read-only use from the console)
 window.__penguinLeague = {
-  M, A, LEVELS, simTick, startMatch, kickoffReset, save, predictGoal, BALL_R, UI, CAM, scene, camera, renderer,
+  M, A, LEVELS, simTick, startMatch, kickoffReset, save, predictGoal, BALL_R, UI, CAM, scene, camera, renderer, AUTOQ, ballView,
   drawOnce: (dt = 1 / 60) => tick(dt),
   setView: (px, py, pz, lx, ly, lz) => { CAM.override = { pos: new V3(px, py, pz), look: new V3(lx, ly, lz) }; },
   clearView: () => { CAM.override = null; },

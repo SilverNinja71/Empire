@@ -84,7 +84,11 @@ const DEFAULT_SAVE = {
   upgrades: { speed: 0, thrust: 0, tank: 0, flip: 0, kick: 0, grip: 0 },
   owned: { hat: ['none'], skin: ['classic'], trail: ['puff'] },
   equip: { hat: 'none', skin: 'classic', trail: 'puff' },
-  settings: { ballCam: true, fov: 110, camDist: 1, volume: 0.7, quality: 'high', hints: true, v2: true },
+  settings: {
+    ballCam: true, fov: 110, camDist: 1, volume: 0.7, quality: 'auto', hints: true, v2: true,
+    camShake: 0.5,                                                              // 0..1 (Camera shake 0-100%)
+    reducedMotion: !!(window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches),
+  },
   career: { played: 0, wins: 0, goals: 0, godWins: 0 },
   last: { mode: '1v1', opp: 'normal', mate: 'normal', len: 300, fair: false },
 };

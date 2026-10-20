@@ -8,7 +8,9 @@ import { ShaderPass as gfxShaderPass } from 'three/addons/postprocessing/ShaderP
 
 const INK = 0x1b1d3a;
 const canvas = $('#gl');
-const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
+// High/Auto render through an MSAA target (see post-processing below), so the canvas itself only needs
+// antialiasing for Low, which draws straight to the screen (takes effect on the next page load)
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: save.settings.quality === 'low', powerPreference: 'high-performance' });
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.toneMapping = THREE.CustomToneMapping; renderer.toneMappingExposure = 1;
 renderer.setClearColor(0x8fd8ff);
@@ -42,9 +44,33 @@ function fitShadow() {
   sc.left = x0 - 1; sc.right = x1 + 1; sc.bottom = y0 - 1; sc.top = y1 + 1; sc.near = Math.max(0.5, -z1 - 10); sc.far = -z0 + 10; sc.updateProjectionMatrix();
 }
 const _gfxV2 = new THREE.Vector2();
+// Auto quality: High, with the render resolution stepped between AUTOQ.min and 1 of High's from measured frame times
+const AUTOQ = { scale: 1, min: 0.67, step: 0.11, ft: 1 / 60, t: 0, upT: 0, hold: {} };
+function autoQuality(realDt) {
+  if (save.settings.quality !== 'auto' || document.hidden || realDt <= 0 || realDt > 0.1) return;
+  AUTOQ.ft += (realDt - AUTOQ.ft) * 0.05; AUTOQ.t += realDt;
+  for (const k in AUTOQ.hold) { AUTOQ.hold[k] -= realDt; if (AUTOQ.hold[k] <= 0) delete AUTOQ.hold[k]; }
+  if (AUTOQ.t < 1.5) return;
+  AUTOQ.t = 0;
+  let next = AUTOQ.scale;
+  if (AUTOQ.ft > 1 / 54 && AUTOQ.scale > AUTOQ.min) { AUTOQ.hold[AUTOQ.scale.toFixed(2)] = 20; next = Math.max(AUTOQ.min, AUTOQ.scale - AUTOQ.step); AUTOQ.upT = 0; }
+  else if (AUTOQ.ft < 1 / 58) {
+    // keeping up (even if vsync-capped): after a few calm seconds, try one step sharper (not one that just failed)
+    AUTOQ.upT += 1.5;
+    const up = Math.min(1, AUTOQ.scale + AUTOQ.step);
+    if (AUTOQ.upT >= 4.5 && up > AUTOQ.scale && !AUTOQ.hold[up.toFixed(2)]) { next = up; AUTOQ.upT = 0; }
+  } else AUTOQ.upT = 0;
+  if (next !== AUTOQ.scale) { AUTOQ.scale = next; applyPixelRatio(); }
+}
+function applyPixelRatio() {
+  const q = save.settings.quality;
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, q === 'low' ? 1 : 1.5) * (q === 'auto' ? AUTOQ.scale : 1));
+  resize();
+}
 function applyQuality() {
-  const hi = save.settings.quality === 'high';
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, hi ? 1.5 : 1));
+  const hi = save.settings.quality !== 'low';
+  if (save.settings.quality !== 'auto') AUTOQ.scale = 1;
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, hi ? 1.5 : 1) * (save.settings.quality === 'auto' ? AUTOQ.scale : 1));
   renderer.shadowMap.enabled = hi; sun.castShadow = hi;
   const upd = (o) => { if (o.material) { (Array.isArray(o.material) ? o.material : [o.material]).forEach((m) => { m.needsUpdate = true; }); } };
   scene.traverse(upd);
