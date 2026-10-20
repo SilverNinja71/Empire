@@ -1700,7 +1700,7 @@ function doM1(f, I) {
       else if (variant === 'down') opt = Object.assign({ heavy: true, spike: true }, M1.down);
       else if (last) opt = Object.assign({ heavy: true }, M1.finisher, h.o);
       else opt = Object.assign({ stun: M1.stun, kb: M1.kb }, h.o);
-      opt.m1 = true;
+      opt.m1 = true; opt.reach = (h.range || 2.5) + M1.lunge;   // lets a remote owner reject hits from too far away
       if (!f.onGround && variant !== 'down') { opt.float = M1.airHang; if (!last) opt.kb = M1.airKb; }
       if (h.side && !variant) opt.dir = f.right(new V3()).multiplyScalar(h.side * 0.8).add(f.fwd(tA).multiplyScalar(0.6));
       if (h.bleed) opt.bleed = true;
@@ -2436,7 +2436,7 @@ function steveCrit(f) {   // falling jump-crit: replaces the next M1 while falli
       if (!a.once(0.08)) return;
       const o = bestFront(f, 2.9, 0.2, 2.8);
       if (!o) { showWhiff(f); return; }
-      const r = hit(f, o, 7.5, { m1: true, kb: 25.2, up: 11.2, ragdoll: 0.71, heavy: true, crit: true });
+      const r = hit(f, o, 7.5, { m1: true, reach: 3.2, kb: 25.2, up: 11.2, ragdoll: 0.71, heavy: true, crit: true });
       if (r === 'hit') { a.hitLanded = true; emit('stars', center(o), { n: 18 }); popText(head(o), 'CRIT!', 'call'); SFX.crit(); }
     },
     end() { if (f.awaken <= 0) f.rig.sword.visible = false; },
@@ -3595,26 +3595,24 @@ function broadcast(msg, except) {
 }
 function serO(o) { const r = {}; for (const k in o) { const v = o[k]; if (v && v.isVector3) r[k] = [r2(v.x), r2(v.y), r2(v.z)]; else if (typeof v !== 'function' && typeof v !== 'object') r[k] = v; } return r; }
 function deO(o) { const r = {}; for (const k in o) { const v = o[k]; r[k] = Array.isArray(v) && v.length === 3 ? new V3(v[0], v[1], v[2]) : v; } return r; }
-// hitting a fighter owned by another player: predict from what we can see, the owner has the final say (see 'hr')
+// hitting a fighter owned by another player: predict from what we can see; the owner has the final say ('hr' reply)
 function hitRemote(att, tgt, dmg, o) {
   if (tgt.netInv) return false;
-  netSendHit(att, tgt, dmg, o);
-  if (tgt.lantern) { if (att === player && dmg > 0) KOTH.mine += dmg; return 'hit'; }   // the host tallies lantern damage
+  if (tgt.lantern) { netSendHit(att, tgt, dmg, o); if (att === player && dmg > 0) KOTH.mine += dmg; return 'hit'; }   // the host tallies lantern damage
   let pred = 'hit';
+  const from = o.from || att.pos;
   if (tgt.blocking && !o.unblockable && !o.breakBlock) {
-    const from = o.from || att.pos; tA.set(from.x - tgt.pos.x, 0, from.z - tgt.pos.z); if (tA.lengthSq() < 1e-4) tA.set(0, 0, 1); tA.normalize();
+    tA.set(from.x - tgt.pos.x, 0, from.z - tgt.pos.z); if (tA.lengthSq() < 1e-4) tA.set(0, 0, 1); tA.normalize();
     if (Math.sin(tgt.yaw) * tA.x + Math.cos(tgt.yaw) * tA.z > 0.05) pred = 'blocked';
   }
-  if (pred === 'hit' && att && !att.remote) {
-    if (att.awaken <= 0) att.ult = Math.min(100, att.ult + dmg * AWAKEN.dealt);
-    if (o.bite && att.awaken > 0 && att.def.ultLifesteal && dmg > 0) { const h = dmg * att.def.ultLifesteal; att.hp = Math.min(100, att.hp + h); popText(head(att), '+' + h.toFixed(1), 'heal'); }
-    if (att === player && dmg > 0) comboHit();
-    att.lastLand = gameTime; if (!o.m1 && gameTime - att.specUseT < 4) { att.specHit = true; att.specHitT = gameTime; }
-  }
+  const seq = ++hitSeq;
+  if (att && !att.remote) { pendingHits.set(seq, { m1: !!o.m1, bite: !!o.bite, t: gameTime }); if (pendingHits.size > 64) pendingHits.delete(pendingHits.keys().next().value); }
+  netSendHit(att, tgt, dmg, o, seq, o.reach !== undefined ? o.reach : Math.hypot(from.x - tgt.pos.x, from.z - tgt.pos.z));
   return pred;
 }
-function netSendHit(att, tgt, dmg, o) {
+function netSendHit(att, tgt, dmg, o, seq, rr) {
   const msg = { t: 'hit', tid: tgt.id, aid: att ? att.id : null, d: dmg, o: serO(o) };
+  if (seq !== undefined) { msg.seq = seq; msg.rr = r2(rr); }
   if (!o.from && att && att.pos) msg.o.from = [r2(att.pos.x), r2(att.pos.y), r2(att.pos.z)];
   const own = ownerOf(tgt.id);
   if (NET.mode === 'host') sendTo(NET.conns.get(own), msg); else sendTo(NET.host, msg);
@@ -3638,31 +3636,53 @@ function packF(f) {
   if (f.rig.ribbons && f.rig.ribbons.visible) fl |= 128; if (f.invuln()) fl |= 256; if (f.dead) fl |= 512; if (f.stars.visible) fl |= 1024; if (f.frozen > 0) fl |= 2048;
   return { i: f.id, n: f.name, c: f.key, p: [r2(f.pos.x), r2(f.pos.y), r2(f.pos.z)], y: r3(f.yaw), h: r1(f.hp), v: [r3(f.V.rx), r3(f.V.ry), r3(f.V.rz), r3(f.V.y), r3(f.V.sy), r3(f.V.sxz)], q, fl, aw: f.awaken > 0 ? 1 : 0 };
 }
-function applyState(e) {
+// ---- snapshots: each one carries the sender's clock; remote fighters are drawn NETI.delay in the past,
+// interpolated between the two snapshots around that moment (no more exponential chasing)
+const NETI = { rate: 1 / 30, delay: 0.1, keep: 1.0, extrap: 0.05, hist: 0.5, slack: 1.2 };
+const netNow = () => performance.now() / 1000;
+const clockOff = new Map();   // owner -> estimated (our clock - their clock), i.e. latency + offset; tracks the fastest arrivals
+function noteClock(owner, ts) {
+  const sample = netNow() - ts, c = clockOff.get(owner);
+  if (c === undefined || sample < c) clockOff.set(owner, sample);
+  else clockOff.set(owner, c + (sample - c) * 0.01);   // drift back up slowly if the path got slower
+}
+function applyState(e, ts) {
   if (!e || ownerOf(e.i) === NET.me || !CHARS[e.c]) return;
   let f = fighters.find((x) => x.id === e.i);
   if (f && f.key !== e.c) { f.dispose(); fighters.splice(fighters.indexOf(f), 1); f = null; }
-  if (!f) { f = new Fighter(e.c, { id: e.i, name: e.n, remote: true }); f.pos.set(e.p[0], e.p[1], e.p[2]); f.yaw = e.y; fighters.push(f); }
-  f.net = e; f.seen = realClock;
+  if (!f) { f = new Fighter(e.c, { id: e.i, name: e.n, remote: true }); f.pos.set(e.p[0], e.p[1], e.p[2]); f.yaw = e.y; f.snaps = []; fighters.push(f); }
+  if (!f.snaps) f.snaps = [];
+  const S = f.snaps;
+  if (S.length && ts <= S[S.length - 1].ts) return;   // out of order / duplicate
+  S.push({ ts, e }); f.net = e; f.seen = realClock;
+  while (S.length > 2 && S[0].ts < ts - NETI.keep) S.shift();
   if (f.lantern && KOTH.f !== f) { KOTH.f = f; KOTH.mine = 0; }
 }
+const _pq0 = [];
 function updatePuppet(f, rdt) {
-  const n = f.net; if (!n) return;
-  const k = 1 - Math.exp(-14 * rdt);
+  const S = f.snaps; if (!S || !S.length) return;
+  const off = clockOff.get(ownerOf(f.id)) ?? 0;
+  const rt = netNow() - off - NETI.delay;   // the sender-clock moment we show
+  let A = S[0], B = S[0], k = 0;
+  if (rt >= S[S.length - 1].ts) { A = B = S[S.length - 1]; }
+  else if (rt > S[0].ts) {
+    for (let i = 0; i < S.length - 1; i++) if (S[i + 1].ts >= rt) { A = S[i]; B = S[i + 1]; k = (rt - A.ts) / Math.max(1e-4, B.ts - A.ts); break; }
+  }
+  const a = A.e, b = B.e, n = k < 0.5 ? a : b;
   const prev = tC.copy(f.pos);
-  if (Math.hypot(n.p[0] - f.pos.x, n.p[2] - f.pos.z) > 8) f.pos.set(n.p[0], n.p[1], n.p[2]);
-  else { f.pos.x += (n.p[0] - f.pos.x) * k; f.pos.y += (n.p[1] - f.pos.y) * k; f.pos.z += (n.p[2] - f.pos.z) * k; }
-  f.yaw = dampAngle(f.yaw, n.y, 16, rdt);
+  if (Math.hypot(b.p[0] - a.p[0], b.p[2] - a.p[2]) > 8) f.pos.set(n.p[0], n.p[1], n.p[2]);   // teleport (respawn / switch): no smear
+  else f.pos.set(lerp(a.p[0], b.p[0], k), lerp(a.p[1], b.p[1], k), lerp(a.p[2], b.p[2], k));
+  f.yaw = a.y + angDiff(a.y, b.y) * k;
   let qi = 0;
   for (const key of PARTS) {
     const part = f.rig[key]; if (!part) continue;
     const cur = f.pose[key];
-    for (let a = 0; a < 3; a++) { const tv = n.q[qi + a]; if (tv !== undefined) cur[a] += (tv - cur[a]) * k; }
+    for (let j = 0; j < 3; j++) { const av = a.q[qi + j], bv = b.q[qi + j]; if (av !== undefined && bv !== undefined) cur[j] = av + angDiff(av, bv) * k; }
     qi += 3; part.rotation.set(cur[0], cur[1], cur[2]);
   }
-  const v = n.v;
-  f.V.rx += angDiff(f.V.rx, v[0]) * k; f.V.ry += angDiff(f.V.ry, v[1]) * k; f.V.rz += angDiff(f.V.rz, v[2]) * k;
-  f.V.y = lerp(f.V.y, v[3], k); f.V.sy = lerp(f.V.sy, v[4], k); f.V.sxz = lerp(f.V.sxz, v[5], k);
+  const va = a.v, vb = b.v;
+  f.V.rx = va[0] + angDiff(va[0], vb[0]) * k; f.V.ry = va[1] + angDiff(va[1], vb[1]) * k; f.V.rz = va[2] + angDiff(va[2], vb[2]) * k;
+  f.V.y = lerp(va[3], vb[3], k); f.V.sy = lerp(va[4], vb[4], k); f.V.sxz = lerp(va[5], vb[5], k);
   const fl = n.fl;
   f.hp = n.h; f.dead = !!(fl & 512); f.netInv = !!(fl & 256); f.blocking = !!(fl & 1); f.frozen = fl & 2048 ? 1 : 0;
   f.stun = fl & 1024 ? 1 : 0; f.ragdoll = 0; f.flatten = 0; f.held = false; f.action = null;
@@ -3678,14 +3698,53 @@ function updatePuppet(f, rdt) {
   applyVisual(f, rdt);
   f.stars.visible = !!(fl & 1024);
   const sp = prev.distanceTo(f.pos) / Math.max(rdt, 1e-3);
-  if (sp > 14 && Math.abs(f.V.rx) > 0.6) emit('wind', center(f), { n: 1, speed: 0.4, size: 0.2, colors: [f.def.color, '#ffffff'] });
+  if (sp > 19.6 && Math.abs(f.V.rx) > 0.6) emit('wind', center(f, tA), { n: 1, speed: 0.4, size: 0.2, colors: [f.def.color, '#ffffff'] });
+}
+// ---- hit checks: the target's owner validates range against where its fighter really was recently,
+// applies the hit (block / parry / guard all happen there) and replies with the result
+function recordHistory() {   // called every simulation step while online: the last NETI.hist seconds of positions
+  for (const f of stepList) {
+    if (!f.hist) f.hist = { p: new Float32Array(32 * 3), t: new Float64Array(32), i: 0 };
+    const H = f.hist, j = H.i % 32; H.p[j * 3] = f.pos.x; H.p[j * 3 + 1] = f.pos.y; H.p[j * 3 + 2] = f.pos.z; H.t[j] = gameTime; H.i++;
+  }
+}
+function nearestRecent(f, x, z) {   // closest horizontal distance from (x, z) to this fighter over the recent history
+  let best = Math.hypot(f.pos.x - x, f.pos.z - z); const H = f.hist; if (!H) return best;
+  for (let j = 0; j < 32; j++) if (gameTime - H.t[j] <= NETI.hist) best = Math.min(best, Math.hypot(H.p[j * 3] - x, H.p[j * 3 + 2] - z));
+  return best;
 }
 function applyNetHit(m) {
   const tgt = fighters.find((x) => x.id === m.tid && !x.remote);
   if (!tgt) return;
   const o = deO(m.o || {});
   const att = fighters.find((x) => x.id === m.aid) || { id: m.aid, name: null, remote: true, pos: o.from || tgt.pos, def: { fx: 'dust' }, awaken: 0, ult: 0, fwd: (v) => v.set(0, 0, 1) };
-  NET.cap = true; hit(att, tgt, m.d, o); NET.cap = false;
+  const from = o.from || att.pos;
+  let r;
+  if (m.rr !== undefined && from && nearestRecent(tgt, from.x, from.z) > m.rr + NETI.slack) r = 'miss';   // out of range even allowing for lag
+  else { NET.cap = true; r = hit(att, tgt, m.d, o); NET.cap = false; }
+  if (m.seq !== undefined) netReply({ t: 'hr', seq: m.seq, aid: m.aid, tid: m.tid, r: r || 'miss', d: m.d });
+}
+function netReply(msg) {
+  const own = ownerOf(msg.aid);
+  if (own === NET.me) return applyHitReply(msg);
+  if (NET.mode === 'host') sendTo(NET.conns.get(own), msg); else sendTo(NET.host, msg);
+}
+// the attacker side: rewards only for confirmed hits; blocked / parried / missed strings are broken off
+const pendingHits = new Map(); let hitSeq = 0;
+function applyHitReply(m) {
+  const p = pendingHits.get(m.seq); if (!p) return;
+  pendingHits.delete(m.seq);
+  const att = fighters.find((x) => x.id === m.aid && !x.remote); if (!att) return;
+  const tgt = fighters.find((x) => x.id === m.tid);
+  if (m.r === 'hit') {
+    if (att.awaken <= 0) att.ult = Math.min(100, att.ult + m.d * AWAKEN.dealt);
+    if (p.bite && att.awaken > 0 && att.def.ultLifesteal && m.d > 0) { const h = m.d * att.def.ultLifesteal; att.hp = Math.min(100, att.hp + h); popText(head(att), '+' + h.toFixed(1), 'heal'); }
+    if (att === player && m.d > 0) comboHit();
+    att.lastLand = gameTime; if (!p.m1 && gameTime - att.specUseT < 4) { att.specHit = true; att.specHitT = gameTime; }
+    return;
+  }
+  if (p.m1) { att.comboIdx = 0; if (m.r === 'blocked') att.m1Lock = Math.max(att.m1Lock, M1.blockLag); }
+  if (m.r === 'parried') { audioAt(att.pos); popText(head(att), 'PARRIED', 'call parry'); parried(att, tgt); }
 }
 function applyFx(list) {
   for (const r of list) {
@@ -3726,13 +3785,21 @@ function applyFx(list) {
 }
 function onData(m, from) {
   if (!m || typeof m !== 'object') return;
-  if (NET.mode === 'host' && m.t !== 'hit') broadcast(m, from);
-  if (m.t === 'st' && Array.isArray(m.e)) for (const e of m.e) applyState(e);
+  if (NET.mode === 'host' && m.t !== 'hit' && m.t !== 'hr') broadcast(m, from);
+  if (m.t === 'st' && Array.isArray(m.e)) {
+    const ts = typeof m.ts === 'number' ? m.ts : netNow();
+    if (m.e.length) noteClock(ownerOf(m.e[0].i), ts);
+    for (const e of m.e) applyState(e, typeof m.ts === 'number' ? ts : netNow());
+  }
   else if (m.t === 'fx' && Array.isArray(m.l)) applyFx(m.l);
   else if (m.t === 'gone') removePuppets((f) => ownerOf(f.id) === m.p);
   else if (m.t === 'hit') {
     const own = ownerOf(m.tid);
     if (own === NET.me) applyNetHit(m);
+    else if (NET.mode === 'host') sendTo(NET.conns.get(own), m);
+  } else if (m.t === 'hr') {
+    const own = ownerOf(m.aid);
+    if (own === NET.me) applyHitReply(m);
     else if (NET.mode === 'host') sendTo(NET.conns.get(own), m);
   }
   updateRoomCount();
@@ -3747,8 +3814,8 @@ function dropPeer(pid) {
 function netTick(rdt) {
   if (!online()) return;
   for (const f of fighters.slice()) if (f.remote && realClock - (f.seen || 0) > 6) { f.dispose(); fighters.splice(fighters.indexOf(f), 1); }
-  NET.tick -= rdt; if (NET.tick > 0) return; NET.tick = 0.05;
-  broadcast({ t: 'st', e: fighters.filter((f) => !f.remote).map(packF) });
+  NET.tick -= rdt; if (NET.tick > 0) return; NET.tick += NETI.rate; if (NET.tick < 0) NET.tick = NETI.rate;   // 30 Hz
+  broadcast({ t: 'st', ts: r3(netNow() - acc), e: fighters.filter((f) => !f.remote).map(packF) });   // stamped with the moment of the last simulation step
   if (NET.fx.length) { broadcast({ t: 'fx', l: NET.fx }); NET.fx = []; }
 }
 let peerLoading = null;
@@ -4105,6 +4172,7 @@ function simStep(dt) {
   audioAt(null);
   updateProjs(dt); updateTraps(dt); updateCans(dt); updateBlocks(dt);
   updateLantern(dt);
+  if (online()) recordHistory();
   NET.cap = false;
 }
 function frame(t) {
