@@ -60,7 +60,7 @@ button:focus-visible,input:focus-visible{outline:2px solid #fff;outline-offset:2
 .glass{background:var(--glass);border:1px solid var(--line);-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px)}
 
 /* Roblox-style top bar */
-#topbar{position:absolute;top:calc(10px + env(safe-area-inset-top,0px));left:max(12px,env(safe-area-inset-left,0px));display:flex;gap:8px;pointer-events:auto;align-items:flex-start}
+#topbar{z-index:5;position:absolute;top:calc(10px + env(safe-area-inset-top,0px));left:max(12px,env(safe-area-inset-left,0px));display:flex;gap:8px;pointer-events:auto;align-items:flex-start}
 .rbtn{height:44px;min-width:44px;border-radius:10px;display:inline-flex;align-items:center;justify-content:center;gap:8px;padding:0 12px;cursor:pointer;font-weight:700;font-size:14px}
 .rbtn:hover{background:var(--glass-hi)}
 .rbtn svg{width:20px;height:20px;fill:none;stroke:#fff;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
@@ -99,7 +99,17 @@ button:focus-visible,input:focus-visible{outline:2px solid #fff;outline-offset:2
 
 /* TSB bottom stack */
 #tsb{position:absolute;left:50%;bottom:calc(12px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);width:min(430px,calc(100vw - 24px));display:grid;gap:6px}
-.r1{display:grid;grid-template-columns:46px 1fr 46px;gap:6px;align-items:end}
+.r1{display:grid;grid-template-columns:46px 46px 1fr;gap:6px;align-items:stretch}
+.hpcol{display:grid;gap:3px;align-content:end;min-width:0}
+.bars{display:grid;grid-template-columns:1fr 1fr;gap:4px}
+.bar{position:relative;height:9px;border-radius:3px;overflow:hidden;background:rgba(0,0,0,.55);border:1px solid var(--line)}
+.bar i{position:absolute;inset:0;transform-origin:left center}
+.bar b{position:absolute;inset:0;display:flex;align-items:center;padding-left:5px;font-size:7px;font-weight:800;letter-spacing:.16em;text-shadow:0 1px 1px #000;opacity:.85}
+.bar.guard i{background:linear-gradient(90deg,#3d7fd6,#8cc4ff)}
+.bar.guard.low i{background:linear-gradient(90deg,#d6503d,#ffb15a)}
+.bar.guard.broke{border-color:#ff6a5a}
+.bar.evade i{background:linear-gradient(90deg,#8a5cff,#e3d6ff)}
+.bar.evade.ready{border-color:rgba(227,214,255,.85);box-shadow:0 0 6px rgba(160,120,255,.6)}
 .hp{position:relative;height:22px;border-radius:4px;overflow:hidden;background:rgba(0,0,0,.55);border:1px solid var(--line)}
 .hp i{position:absolute;inset:0;transform-origin:left center}
 .hp .lag{background:#fff;opacity:.4}
@@ -117,6 +127,9 @@ button:focus-visible,input:focus-visible{outline:2px solid #fff;outline-offset:2
 .slots{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px}
 .slot{position:relative;height:78px;border-radius:6px;overflow:hidden;border:1px solid var(--line);background:var(--glass);display:grid;align-content:end;padding:6px}
 .slot .k{position:absolute;left:7px;top:5px;font-size:13px;font-weight:800;color:#fff;z-index:2}
+.slot .cdl{position:absolute;right:6px;top:6px;font-size:10px;font-weight:700;color:var(--dim);z-index:2;font-variant-numeric:tabular-nums}
+.slot .tg{position:absolute;left:0;right:0;top:0;height:3px;z-index:2}
+.slot .tg.ub{background:#ff3b30}.slot .tg.gr{background:#ff9f1a}.slot .tg.gb{background:#ffd34a}
 .slot .n{position:relative;z-index:2;font-size:10px;line-height:1.2;font-weight:700;text-align:center;text-transform:uppercase;letter-spacing:.02em}
 .slot .cd,.mini .cd{position:absolute;inset:0;background:rgba(0,0,0,.7);transform-origin:top center;transform:scaleY(0);z-index:1}
 .slot .t{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:22px;font-weight:800;z-index:2;padding-bottom:16px;text-shadow:0 2px 3px #000;font-variant-numeric:tabular-nums}
@@ -139,11 +152,29 @@ button:focus-visible,input:focus-visible{outline:2px solid #fff;outline-offset:2
 #banner strong{display:block;font-size:40px;font-weight:800;line-height:1.05;text-transform:uppercase}
 #cross{position:absolute;left:50%;top:50%;width:8px;height:8px;margin:-4px 0 0 -4px;border:2px solid rgba(255,255,255,.9);border-radius:50%;display:none}
 #cross.on{display:block}
-#help{position:absolute;left:max(12px,env(safe-area-inset-left,0px));bottom:calc(12px + env(safe-area-inset-bottom,0px));border-radius:10px;padding:10px 12px;font-size:11px;line-height:1.6;width:236px;pointer-events:auto}
-#help h4{margin:0 0 4px;font-size:10px;font-weight:800;letter-spacing:.14em;text-transform:uppercase}
+#help,#settings{position:absolute;left:max(12px,env(safe-area-inset-left,0px));top:calc(62px + env(safe-area-inset-top,0px));border-radius:10px;padding:10px 12px;font-size:11px;line-height:1.5;width:min(330px,calc(100vw - 24px));max-height:calc(100vh - 80px - var(--tsbTop,160px));overflow:auto;pointer-events:auto;overscroll-behavior:contain}
+#help.closed{display:none}
+#help h4,#settings h4{margin:0;font-size:10px;font-weight:800;letter-spacing:.14em;text-transform:uppercase}
+.ht{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:2px 0 5px}
+.ht .hint{font-size:10px;color:var(--dim)}
+#help .ht:not(:first-child){margin-top:9px;padding-top:7px;border-top:1px solid var(--line)}
 #help .r{display:flex;gap:8px;color:var(--dim)}
-#help kbd{font:inherit;font-weight:800;color:#fff;min-width:62px}
-@media (max-width:980px){#help{display:none}}
+#help kbd{font:inherit;font-weight:800;color:#fff;min-width:74px;flex:none}
+.mv{padding:4px 0;border-bottom:1px solid rgba(255,255,255,.07)}
+.mv:last-child{border-bottom:0}
+.mv .mh{display:flex;align-items:baseline;gap:6px;color:#fff;font-weight:700}
+.mv .mh kbd{min-width:0!important;font-size:10px;padding:0 5px;border:1px solid var(--line);border-radius:4px}
+.mv .ms{display:flex;flex-wrap:wrap;gap:4px 8px;color:var(--dim);font-size:10px;font-variant-numeric:tabular-nums}
+.mv .ms em{font-style:normal;font-weight:800;letter-spacing:.06em;font-size:9px;padding:0 4px;border-radius:3px}
+.mv .ms em.ub{background:#ff3b30;color:#fff}.mv .ms em.gr{background:#ff9f1a;color:#111}.mv .ms em.gb{background:#ffd34a;color:#111}.mv .ms em.ct{background:#7fd4ff;color:#111}
+.mv p{margin:1px 0 0;color:#d7dce3;font-size:10.5px}
+#settings{z-index:6}
+#settings .opt{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:6px 0;font-size:12px;font-weight:600}
+#settings select{height:30px;border-radius:7px;border:1px solid var(--line);background:rgba(0,0,0,.35);padding:0 6px;font-weight:700}
+#settings .note{margin:0 0 6px;color:var(--dim);font-size:10.5px}
+.kr{display:grid;grid-template-columns:1fr 92px;gap:8px;align-items:center;padding:2px 0;font-size:11.5px;color:#d7dce3}
+.kr button{height:26px;border-radius:6px;border:1px solid var(--line);background:rgba(255,255,255,.08);font-size:11px;font-weight:800;cursor:pointer}
+.kr button.wait{background:#fff;color:#111}
 @media (max-width:560px){
   .slot{height:62px}.slot .n{font-size:8px}.slot .t{font-size:17px}
   #room{width:min(250px,calc(100vw - 24px))}
@@ -187,8 +218,7 @@ button:focus-visible,input:focus-visible{outline:2px solid #fff;outline-offset:2
 
 /* help panel swaps keyboard rows for touch rows on touch devices */
 #help .t-only{display:none}
-body.touch #help{display:block;top:calc(62px + env(safe-area-inset-top,0px));bottom:auto;max-height:calc(100vh - 80px);overflow:auto}
-body.touch #help .k-only{display:none}
+body.touch .k-only{display:none!important}
 body.touch #help .t-only{display:flex}
 
 /* touch controls: floating stick bottom-left, action cluster bottom-right (portrait: above the hotbar) */
@@ -216,11 +246,34 @@ body.touch .ult b{font-size:11px}
   body.touch #tbtns{bottom:calc(var(--tsbTop,160px) + 8px)}
 }
 @media (orientation:landscape){body.touch #tsb{width:min(400px,calc(100vw - 492px * var(--k) - 40px))}}
+/* touch hotbar: bigger tap targets */
+body.touch .slot{height:84px;border-radius:9px}
+body.touch .slot .n{font-size:9.5px}
+body.touch .slot .t{font-size:24px}
+body.touch .mini{height:52px}
 @media (orientation:landscape) and (max-height:500px){
-  body.touch .slot{height:52px}
-  body.touch .slot .t{font-size:16px}
+  body.touch .slot{height:62px}
+  body.touch .slot .t{font-size:18px}
   body.touch .slot .n{font-size:8px}
-  body.touch .mini{height:36px}
+  body.touch .mini{height:40px}
+  body.touch .bars{display:none}
+}
+/* portrait phones: the stack spans the width */
+@media (max-width:480px){
+  #tsb{width:calc(100vw - 16px);bottom:calc(8px + env(safe-area-inset-bottom,0px));gap:5px}
+  .r1{grid-template-columns:40px 40px 1fr}
+  .mini{height:40px}.mini .k{font-size:13px}.mini .l{font-size:7px}
+  .hp{height:20px}
+}
+/* large desktops: everything a little bigger */
+@media (min-width:1700px) and (min-height:900px){
+  #tsb{width:540px;gap:8px}
+  .r1{grid-template-columns:56px 56px 1fr}
+  .mini{height:56px}.mini .k{font-size:18px}.mini .l{font-size:9px}
+  .hp{height:26px}.hp b{font-size:14px}.bar{height:11px}
+  .ult{height:20px}.ult b{font-size:12px}
+  .slot{height:96px}.slot .n{font-size:12px}.slot .t{font-size:28px}.slot .k{font-size:15px}
+  #help,#settings{width:380px;font-size:12.5px}
 }
 </style>
 
@@ -240,6 +293,9 @@ body.touch .ult b{font-size:11px}
       </button>
       <div id="charMenu" class="glass" role="menu" hidden></div>
     </div>
+    <button type="button" class="rbtn glass" id="setBtn" aria-label="Settings" title="Settings and keys">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3.2"/><path d="M12 2.8v2.6M12 18.6v2.6M21.2 12h-2.6M5.4 12H2.8M18.5 5.5l-1.8 1.8M7.3 16.7l-1.8 1.8M18.5 18.5l-1.8-1.8M7.3 7.3L5.5 5.5"/></svg>
+    </button>
     <button type="button" class="rbtn glass" id="fpvBtn" aria-label="First-person view" aria-pressed="false" title="First-person view (V)">
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6S2 12 2 12z"/><circle cx="12" cy="12" r="2.6"/></svg>
     </button>
@@ -301,35 +357,36 @@ body.touch .ult b{font-size:11px}
 
   <div id="tsb">
     <div class="r1">
-      <div class="mini" id="qMini"><i class="cd"></i><span class="k">Q</span><span class="l">DASH</span><span class="t"></span></div>
-      <div class="hp"><i class="lag" id="hpLag"></i><i class="fill" id="hpFill"></i><b><span class="nm" id="hpName">You</span><span id="hpTxt">100</span></b></div>
-      <div class="mini" id="evMini"><i class="cd"></i><span class="k">Q</span><span class="l">EVASIVE</span><span class="t"></span></div>
+      <div class="mini" id="qMini" title="Front dash: a gap closer"><i class="cd"></i><span class="k">Q</span><span class="l">FRONT</span><span class="t"></span></div>
+      <div class="mini" id="sMini" title="Side / back dash"><i class="cd"></i><span class="k">Q</span><span class="l">SIDE</span><span class="t"></span></div>
+      <div class="hpcol">
+        <div class="hp"><i class="lag" id="hpLag"></i><i class="fill" id="hpFill"></i><b><span class="nm" id="hpName">You</span><span id="hpTxt">100</span></b></div>
+        <div class="bars">
+          <div class="bar guard" id="guardBar" title="Guard: blocked M1 −20, blocked move −35, breaks at 0"><i id="guardFill"></i><b>GUARD</b></div>
+          <div class="bar evade" id="evBar" title="Evasive: refills over time and when you take hits; usable from the 2nd hit of a combo"><i id="evFill"></i><b>EVASIVE</b></div>
+        </div>
+      </div>
     </div>
-    <div class="ult" id="ultBar" role="button" aria-label="Awaken (G)"><i id="ultFill"></i><b>[G] AWAKEN</b><span id="ultPct">0%</span></div>
+    <div class="ult" id="ultBar" role="button" aria-label="Awaken"><i id="ultFill"></i><b id="ultLbl">[G] AWAKEN</b><span id="ultPct">0%</span></div>
     <div class="slots" id="slots"></div>
   </div>
 
-  <div id="help" class="glass">
-    <h4>Controls<span class="k-only"> · H to hide</span></h4>
-    <div class="r k-only"><kbd>WASD / ←↑→↓</kbd>Move</div>
-    <div class="r k-only"><kbd>Click</kbd>M1 (0.38s cadence)</div>
-    <div class="r k-only"><kbd>Space + M1</kbd>Final hit: hold = uppercut, airborne = downslam</div>
-    <div class="r k-only"><kbd>Q + dir</kbd>Dash: ↑ lunge-punch, ← → strafe, ↓ backflip</div>
-    <div class="r k-only"><kbd>Q (stunned)</kbd>Evasive burst, 20s</div>
-    <div class="r k-only"><kbd>F</kbd>Block (front, −75%)</div>
-    <div class="r k-only"><kbd>1–4 · G</kbd>Moves · Awaken at 100% (or click them)</div>
-    <div class="r k-only"><kbd>R</kbd>Pick up / throw trash can</div>
-    <div class="r k-only"><kbd>Shift</kbd>Shift-lock · right-drag camera</div>
-    <div class="r k-only"><kbd>Tab</kbd>Lock on (or middle-click)</div>
-    <div class="r t-only"><kbd>Left stick</kbd>Move</div>
-    <div class="r t-only"><kbd>Drag right</kbd>Turn camera · pinch to zoom</div>
-    <div class="r t-only"><kbd>M1</kbd>Attack (hold to chain) · hold JUMP for the uppercut</div>
-    <div class="r t-only"><kbd>DASH</kbd>Dash toward the stick · stunned = Evasive</div>
-    <div class="r t-only"><kbd>BLOCK · GRAB</kbd>Guard · pick up / throw a trash can</div>
-    <div class="r t-only"><kbd>LOCK</kbd>Lock on to the nearest fighter</div>
-    <div class="r t-only"><kbd>Tap 1–4</kbd>Moves · tap AWAKEN at 100%</div>
-    <div class="r"><kbd>Wall splat</kbd>Ragdoll into a tree, post or bench: +4, extra stun</div>
-    <div class="r"><kbd>Lantern</kbd>Every 60s · first to 20 dmg wins</div>
+  <div id="help" class="glass" role="dialog" aria-label="Controls and move list">
+    <div class="ht"><h4>Controls</h4><span class="k-only hint" id="helpHint">H to hide</span></div>
+    <div id="helpKeys"></div>
+    <div class="ht"><h4>Move list · <span id="mlChar"></span></h4></div>
+    <div id="moveList"></div>
+  </div>
+
+  <div id="settings" class="glass" role="dialog" aria-label="Settings" hidden>
+    <div class="ht"><h4>Settings</h4><button type="button" class="sbtn" id="setClose">Close</button></div>
+    <label class="opt k-only"><input type="checkbox" id="optLock"> Lock the mouse when I click the arena</label>
+    <label class="opt"><span>Bot difficulty (hosted servers)</span><select id="optBots"><option value="easy">Easy</option><option value="normal">Normal</option><option value="hard">Hard</option></select></label>
+    <div class="k-only">
+      <div class="ht"><h4>Keys</h4><button type="button" class="sbtn" id="keysReset">Reset</button></div>
+      <p class="note">Click a key, then press the new one (Esc cancels). Left click is always M1; arrow keys always move.</p>
+      <div id="keyList"></div>
+    </div>
   </div>
 </div>
 
@@ -3118,6 +3175,7 @@ function clearIntent(I) { I.move.set(0, 0, 0); I.fw = 0; I.st = 0; I.byaw = unde
 function typing() { const a = document.activeElement; return a && (a.tagName === 'INPUT' || a.tagName === 'SELECT'); }
 addEventListener('keydown', (e) => {
   if (rebinding) { e.preventDefault(); finishRebind(e.code); return; }
+  if (e.code === 'Escape') closePanel();
   SFX.init();
   if (typing()) { if (e.code === 'Enter' && document.activeElement.id === 'joinCode') { e.preventDefault(); joinArena($('#joinCode').value); } if (e.code === 'Escape') document.activeElement.blur(); return; }
   const c = e.code, act = CODE2ACT.get(c) || ALT_KEYS[c];
@@ -3201,8 +3259,8 @@ function enableTouch(on) {
   if (TOUCH.on === on) return;
   TOUCH.on = on;
   document.body.classList.toggle('touch', on); $('#touch').hidden = !on;
-  $('#ultBar b').textContent = on ? 'TAP · AWAKEN' : '[G] AWAKEN';
-  if (on) $('#help').hidden = true;
+  if (player) { refreshKeyLabels(); buildHelp(); }
+  if (on) toggleHelp(false);
   resetTouch(); syncHudVars();
 }
 function resetTouch() {
@@ -3798,6 +3856,8 @@ addEventListener('beforeunload', () => { try { if (NET.peer) NET.peer.destroy();
 // =====================================================================
 const slotEls = [];
 let lagHp = 100;
+const TAGS = { unblockable: ['ub', 'UNBLOCKABLE'], grab: ['gr', 'GRAB'], 'breaks guard': ['gb', 'BREAKS GUARD'], counter: ['ct', 'COUNTER'] };
+const cdText = (v) => (Math.abs(v - Math.round(v)) < 0.05 ? String(Math.round(v)) : v.toFixed(1)) + 's';
 function setupHUD() {
   const d = player.def;
   document.documentElement.style.setProperty('--accent', d.color);
@@ -3806,14 +3866,102 @@ function setupHUD() {
   const sl = $('#slots'); sl.innerHTML = ''; slotEls.length = 0;
   d.moves.forEach((m, i) => {
     const box = document.createElement('div'); box.className = 'slot'; box.dataset.i = String(i);
-    box.setAttribute('role', 'button'); box.setAttribute('aria-label', 'Move ' + (i + 1) + ': ' + m.name);
-    box.innerHTML = '<i class="cd"></i><span class="k"></span><span class="t"></span><span class="n"></span>';
-    box.querySelector('.k').textContent = String(i + 1); box.querySelector('.n').textContent = m.name;
-    sl.appendChild(box); slotEls.push({ box, cd: box.querySelector('.cd'), t: box.querySelector('.t'), last: '' });
+    box.setAttribute('role', 'button'); box.setAttribute('aria-label', 'Move ' + (i + 1) + ': ' + m.name + ', ' + m.cd + ' second cooldown');
+    box.innerHTML = '<i class="tg"></i><i class="cd"></i><span class="k"></span><span class="cdl"></span><span class="t"></span><span class="n"></span>';
+    const tag = (m.tags || []).find((t) => TAGS[t] && t !== 'counter'); if (tag) box.querySelector('.tg').classList.add(TAGS[tag][0]);
+    box.querySelector('.n').textContent = m.name; box.querySelector('.cdl').textContent = cdText(m.cd);
+    sl.appendChild(box); slotEls.push({ box, cd: box.querySelector('.cd'), t: box.querySelector('.t'), k: box.querySelector('.k'), last: '' });
   });
   lagHp = player.hp;
   for (const it of document.querySelectorAll('.citem')) it.setAttribute('aria-checked', String(it.dataset.char === player.key));
+  refreshKeyLabels(); buildHelp();
 }
+// every on-screen key hint follows the current bindings
+function refreshKeyLabels() {
+  slotEls.forEach((el, i) => { el.k.textContent = TOUCH.on ? String(i + 1) : kb('move' + (i + 1)); });
+  for (const id of ['#qMini', '#sMini']) $(id + ' .k').textContent = TOUCH.on ? '' : kb('dash');
+  $('#ultLbl').textContent = TOUCH.on ? 'TAP · AWAKEN' : '[' + kb('ult') + '] AWAKEN';
+  $('#helpHint').textContent = kb('help') + ' to hide';
+  $('#fpvBtn').title = 'First-person view (' + kb('fpv') + ')';
+}
+// H panel: controls (from the live bindings) and the move list of the current character
+function buildHelp() {
+  const d = player.def, K = $('#helpKeys'), L = $('#moveList');
+  const rows = [
+    ['k', kb('up') + kb('left') + kb('down') + kb('right'), 'Move (arrow keys too)'],
+    ['k', 'Click', 'M1 · one click per hit'],
+    ['k', 'Hold ' + kb('jump'), 'On the 4th M1: uppercut · then ' + kb('jump') + ' again to chase'],
+    ['k', kb('dash') + ' + dir', 'Dash: ↑ close the gap · ← → side (cancels a landed M1) · ↓ back'],
+    ['k', kb('dash') + ' when hit', 'Evasive (full gauge, from the 2nd hit of a combo)'],
+    ['k', kb('block'), 'Block · raise it just before a hit to PARRY'],
+    ['k', kb('move1') + '–' + kb('move4') + ' · ' + kb('ult'), 'Moves · Awaken at 100%'],
+    ['k', kb('grab'), 'Pick up / throw a trash can'],
+    ['k', kb('lock'), 'Lock on · press again for the next target'],
+    ['k', kb('shift') + ' · ' + kb('fpv'), 'Shift-lock · first-person view'],
+    ['k', 'Esc', 'Free the mouse (click the arena to lock it again)'],
+    ['t', 'Left stick', 'Move · drag right side to turn, pinch to zoom'],
+    ['t', 'M1', 'Tap once per hit · hold JUMP on the 4th for the uppercut'],
+    ['t', 'DASH', 'Toward the stick · when hit (2nd+ hit): Evasive'],
+    ['t', 'BLOCK', 'Hold to guard · press just before a hit to parry'],
+    ['t', 'LOCK', 'Lock on · tap again for the next target'],
+    ['', 'Wall splat', 'Ragdoll into a tree, post or bench: +4, extra stun'],
+    ['', 'Lantern', 'Every 60 s · first to 20 damage wins'],
+  ];
+  K.innerHTML = '';
+  for (const [only, key, txt] of rows) {
+    const r = document.createElement('div'); r.className = 'r' + (only === 'k' ? ' k-only' : only === 't' ? ' t-only' : '');
+    const k = document.createElement('kbd'); k.textContent = key; r.append(k, document.createTextNode(txt)); K.appendChild(r);
+  }
+  $('#mlChar').textContent = d.han ? d.short : d.name;
+  L.innerHTML = '';
+  const item = (key, name, stats, tags, desc) => {
+    const el = document.createElement('div'); el.className = 'mv';
+    const h = document.createElement('div'); h.className = 'mh';
+    const k = document.createElement('kbd'); k.textContent = key; const n = document.createElement('span'); n.textContent = name; h.append(k, n);
+    const st = document.createElement('div'); st.className = 'ms';
+    for (const x of stats) { const sp = document.createElement('span'); sp.textContent = x; st.appendChild(sp); }
+    for (const t of tags || []) if (TAGS[t]) { const e = document.createElement('em'); e.className = TAGS[t][0]; e.textContent = TAGS[t][1]; st.appendChild(e); }
+    const p = document.createElement('p'); p.textContent = desc;
+    el.append(h, st, p); L.appendChild(el);
+  };
+  const m1 = d.m1.map((h) => fmt(h.dmg)).join(' · ');
+  item(TOUCH.on ? 'M1' : 'Click', 'M1 string', [m1 + ' dmg', 'cadence ' + M1.gap + 's'], [], '4 hits; only advances on a hit. 4th knocks back · hold ' + (TOUCH.on ? 'JUMP' : kb('jump')) + ': uppercut · in the air: downslam.');
+  d.moves.forEach((m, i) => item(TOUCH.on ? String(i + 1) : kb('move' + (i + 1)), m.name, [m.dmg + ' dmg', cdText(m.cd) + ' cooldown'], m.tags, m.desc || ''));
+  item(TOUCH.on ? 'AWAKEN' : kb('ult'), d.ult.name, [AWAKEN.dur + 's'], [], d.ultDesc || '');
+}
+// Settings: mouse lock, bot difficulty and key rebinding
+function openSettings(on) {
+  const p = $('#settings'); p.hidden = on === undefined ? !p.hidden : !on;
+  if (!p.hidden) { if (mouseLocked()) document.exitPointerLock(); buildKeyList(); $('#optLock').checked = SETTINGS.autoLock; $('#optBots').value = SETTINGS.bots; }
+  else rebinding = null;
+}
+function closePanel() { if (!$('#settings').hidden) openSettings(false); }
+function buildKeyList() {
+  const L = $('#keyList'); L.innerHTML = '';
+  for (const [act, label] of BIND_DEFS) {
+    const r = document.createElement('div'); r.className = 'kr';
+    const t = document.createElement('span'); t.textContent = label;
+    const b = document.createElement('button'); b.type = 'button'; b.dataset.act = act;
+    b.textContent = rebinding === act ? 'Press a key…' : kb(act); if (rebinding === act) b.classList.add('wait');
+    b.addEventListener('click', (e) => { e.stopPropagation(); rebinding = rebinding === act ? null : act; buildKeyList(); });
+    r.append(t, b); L.appendChild(r);
+  }
+}
+function finishRebind(code) {
+  const act = rebinding; rebinding = null;
+  if (code !== 'Escape' && act) {
+    const other = CODE2ACT.get(code);
+    if (other && other !== act) BIND[other] = BIND[act];   // swap so no two actions share a key
+    BIND[act] = code; reindexBinds(); store.set('binds', BIND);
+    refreshKeyLabels(); buildHelp();
+  }
+  buildKeyList();
+}
+$('#setBtn').addEventListener('click', (e) => { SFX.init(); openSettings(); e.currentTarget.blur(); });
+$('#setClose').addEventListener('click', () => openSettings(false));
+$('#optLock').addEventListener('change', (e) => { SETTINGS.autoLock = e.target.checked; store.set('settings', SETTINGS); });
+$('#optBots').addEventListener('change', (e) => { SETTINGS.bots = e.target.value; store.set('settings', SETTINGS); updateBotUI(); e.target.blur(); });
+$('#keysReset').addEventListener('click', () => { for (const [k, , d] of BIND_DEFS) BIND[k] = d; reindexBinds(); store.set('binds', BIND); refreshKeyLabels(); buildHelp(); buildKeyList(); });
 // HUD writes only touch the DOM when a value actually changes (no per-frame style / text churn)
 const _hw = new WeakMap();
 function hudSet(el, prop, v) {
@@ -3829,8 +3977,9 @@ function setCd(el, frac, secs) {
   hudSet(el.t, 'text', secs > 0 ? (secs < 1 ? secs.toFixed(1) : String(Math.ceil(secs))) : '');
 }
 const qMini = { cd: $('#qMini .cd'), t: $('#qMini .t'), last: '', box: $('#qMini') };
-const evMini = { cd: $('#evMini .cd'), t: $('#evMini .t'), last: '', box: $('#evMini') };
-const HUD = { hpFill: $('#hpFill'), hpLag: $('#hpLag'), hpTxt: $('#hpTxt'), ult: $('#ultBar'), ultFill: $('#ultFill'), ultPct: $('#ultPct'), combo: $('#combo') };
+const sMini = { cd: $('#sMini .cd'), t: $('#sMini .t'), last: '', box: $('#sMini') };
+const HUD = { hpFill: $('#hpFill'), hpLag: $('#hpLag'), hpTxt: $('#hpTxt'), ult: $('#ultBar'), ultFill: $('#ultFill'), ultPct: $('#ultPct'), combo: $('#combo'),
+  guard: $('#guardBar'), guardFill: $('#guardFill'), ev: $('#evBar'), evFill: $('#evFill') };
 function updateHUD(rdt) {
   const p = player;
   lagHp = Math.max(p.hp, damp(lagHp, p.hp, gameTime - p.lastHurt > 0.5 ? 6 : 0, rdt));
@@ -3838,16 +3987,19 @@ function updateHUD(rdt) {
   hudSet(HUD.hpTxt, 'text', p.dead ? 'K.O.' : String(Math.ceil(p.hp)));
   if (p.awaken > 0) { hudSet(HUD.ult, 'class', 'ult awake'); hudSet(HUD.ultFill, 'transform', sx3(p.awaken / AWAKEN.dur)); hudSet(HUD.ultPct, 'text', p.awaken.toFixed(1) + 's'); }
   else { hudSet(HUD.ult, 'class', 'ult' + (p.ult >= 100 ? ' full' : '')); hudSet(HUD.ultFill, 'transform', sx3(p.ult / 100)); hudSet(HUD.ultPct, 'text', Math.floor(p.ult) + '%'); }
+  const rate = p.awaken > 0 && p.def.ultCdRate ? p.def.ultCdRate : 1;   // shown in real seconds, even while cooldowns tick faster
   p.def.moves.forEach((m, i) => {
     const el = slotEls[i]; if (!el) return;
     const armed = (p.key === 'steve' && i === 0 && p.maceArmed > 0) || (p.key === 'shark' && i === 0 && p.action && p.action.name === 'submerge' && p.action.phase === 'under');
     hudCls(el.box, 'armed', armed);
     el.last = armed ? 'NOW' : '';
     if (armed) hudSet(el.t, 'text', 'NOW');
-    setCd(el, p.cds[i] / m.cd, p.cds[i]);
+    setCd(el, p.cds[i] / m.cd, p.cds[i] / rate);
   });
   setCd(qMini, p.fdashCd / DASH.frontCd, p.fdashCd); hudCls(qMini.box, 'ready', p.fdashCd <= 0);
-  setCd(evMini, 1 - p.evasive / EVASIVE.max, 0); hudCls(evMini.box, 'ready', p.evasive >= EVASIVE.max);
+  setCd(sMini, p.dashCd / DASH.cd, p.dashCd); hudCls(sMini.box, 'ready', p.dashCd <= 0);
+  hudSet(HUD.guardFill, 'transform', sx3(p.guard / GUARD.max)); hudCls(HUD.guard, 'low', p.guard < 35); hudCls(HUD.guard, 'broke', p.blockBreak > 0);
+  hudSet(HUD.evFill, 'transform', sx3(p.evasive / EVASIVE.max)); hudCls(HUD.ev, 'ready', p.evasive >= EVASIVE.max);
   if (realClock - comboT > 1.4) hudCls(HUD.combo, 'on', false);
 }
 function updateTags() {
@@ -3892,11 +4044,10 @@ function buildCharMenu() {
 function toggleCharMenu() { const m = $('#charMenu'); m.hidden = !m.hidden; $('#charBtn').setAttribute('aria-expanded', String(!m.hidden)); }
 function closeCharMenu() { $('#charMenu').hidden = true; $('#charBtn').setAttribute('aria-expanded', 'false'); }
 $('#charBtn').addEventListener('click', (e) => { SFX.init(); toggleCharMenu(); e.currentTarget.blur(); });
-$('#menuBtn').addEventListener('click', (e) => { $('#help').hidden = !$('#help').hidden; e.currentTarget.blur(); });
+$('#menuBtn').addEventListener('click', (e) => { toggleHelp(); e.currentTarget.blur(); });
 $('#muteBtn').addEventListener('click', (e) => { toggleMute(); e.currentTarget.blur(); });
 $('#fpvBtn').addEventListener('click', (e) => { toggleFpv(); e.currentTarget.blur(); });
-function toggleHelp() { $('#help').hidden = !$('#help').hidden; }
-function closePanel() { /* settings panel (added with the HUD) */ }
+function toggleHelp(on) { const h = $('#help'); h.classList.toggle('closed', on === undefined ? !h.classList.contains('closed') : !on); }
 function switchCharacter(key) {
   closeCharMenu();
   const old = player;
@@ -3995,6 +4146,7 @@ spawnNPCs();
 camT.set(0, 1.7, -14);
 buildCharMenu(); setupHUD(); setRoomUI();
 enableTouch(coarsePointer.matches); syncHudVars();
+toggleHelp(innerWidth >= 980 && innerHeight >= 700 && !TOUCH.on);
 requestAnimationFrame(frame);
 // ?dev=1 exposes internals for automated testing in the browser console
 if (/[?&]dev=1/.test(location.search)) window.__scbg = { fighters, get player() { return player; }, get gameTime() { return gameTime; }, CHARS, hit, press, held, BUF, SETTINGS, BIND, KOTH, NET, addBot, removeBot, useAbility, doM1, cycleLock, lock, toggleFpv, get fpv() { return fpv; }, renderer, M1, GUARD, PARRY, COMBO };
