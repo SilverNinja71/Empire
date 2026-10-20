@@ -3155,7 +3155,9 @@
           this.xVel = 0;
           this.yVel = 0;
           this.onGround = false;
-          this.jumpsLeft = 1;
+          // Same as a landing (checkPlatformCollision), so a fighter knocked airborne
+          // right after spawning still has both air jumps.
+          this.jumpsLeft = 2;
           this.coyoteTimer = 0;
           this.facing = facing;
           this.jumpBuffer = 0;
