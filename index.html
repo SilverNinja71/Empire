@@ -22,6 +22,14 @@
         h2 { margin: 6px 0; font-size: 26px; }
         a.game p { color: var(--muted); margin: 0; line-height: 1.4; }
         .note { margin-top: 30px; color: var(--muted); font-size: 14px; text-align: center; max-width: 520px; }
+        .trophies { width: 100%; max-width: 760px; margin-top: 28px; background: var(--card); border-radius: 18px; padding: 16px 20px; }
+        .trophies h3 { margin: 0 0 4px; font-size: 22px; display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
+        .trophies h3 small { color: var(--muted); font-size: 14px; font-weight: 600; }
+        .trophies .who { color: var(--muted); font-size: 14px; margin: 0 0 10px; }
+        .shelf { display: flex; flex-wrap: wrap; gap: 8px; }
+        .shelf div { display: flex; align-items: center; gap: 6px; padding: 4px 10px 4px 6px; border-radius: 12px; background: rgba(255,255,255,0.06); font-size: 14px; }
+        .shelf div.off { opacity: 0.45; }
+        .shelf div.worn { outline: 2px solid var(--accent); }
     </style>
 </head>
 <body>
@@ -39,6 +47,37 @@
             <p>Train your penguin in swimming, waddling, climbing, jumping and hunting, then race from the Zoo to the ends of the Earth.</p>
         </a>
     </div>
-    <p class="note">Your username, sign-in and gold carry over between the games on this site.</p>
+    <section class="trophies" id="trophies" hidden>
+        <h3>Trophies <small id="trophy-count"></small></h3>
+        <p class="who" id="trophy-who"></p>
+        <div class="shelf" id="trophy-shelf"></div>
+    </section>
+    <p class="note">Your username, sign-in, gold and trophies carry over between the games on this site.</p>
+    <script src="shared/accounts.js"></script>
+    <script>
+        // Trophy shelf: everything you've earned in any game, and the title you're wearing
+        (function () {
+            const T = window.GameAccounts && window.GameAccounts.trophies;
+            if (!T) return;
+            const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+            function render() {
+                const got = {};
+                T.earned().forEach((t) => { got[t.id] = true; });
+                const all = T.catalog();
+                const worn = T.title();
+                const cur = window.GameAccounts.current();
+                document.getElementById("trophy-count").textContent = Object.keys(got).length + " / " + all.length;
+                document.getElementById("trophy-who").textContent = (cur ? cur.username : "Guest") + (worn ? " · wearing \u201c" + worn.title + "\u201d" : " · pick a title in Penguin Life's Stats");
+                document.getElementById("trophy-shelf").innerHTML = all.map((t) =>
+                    '<div class="' + (got[t.id] ? "" : "off") + (worn && worn.id === t.id ? " worn" : "") + '" title="' + esc(t.desc) + '">' + T.badgeHTML(t.id, 24, !got[t.id]) + esc(t.name) + "</div>"
+                ).join("");
+                document.getElementById("trophies").hidden = false;
+            }
+            T.check({ quiet: true });
+            render();
+            window.addEventListener("gametrophies", render);
+            window.addEventListener("storage", render);
+        })();
+    </script>
 </body>
 </html>

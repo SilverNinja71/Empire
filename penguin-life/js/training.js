@@ -11,6 +11,25 @@
     const POWER_NAMES = { magnet: "Coin Magnet!", shield: "Shield!", double: "Double Coins!" };
     PL.POWER_TIME = POWER_TIME;
 
+    // Weather with gameplay effects. Blizzard: fresh powder makes slides 20% slicker and rare Frost Fish
+    // turn up. Northern Lights: 1.5x training XP and power-ups (the rare drops) show up 1.6x as often.
+    PL.WEATHER_FX = {
+        blizzard: { name: "BLIZZARD!", color: "#e1f5fe", sub: "Slides +20% · rare Frost Fish about", slide: 1.2, frost: true },
+        aurora: { name: "NORTHERN LIGHTS!", color: "#69f0ae", sub: "x1.5 XP · more power-ups", xp: 1.5, drops: 1.6 }
+    };
+    const FROST_FISH_VALUE = 10;
+    // More momentum on a slide: less drag and a higher top speed
+    PL.slickSlide = function (P, k) {
+        P.drag /= k;
+        P.maxS *= k;
+        return P;
+    };
+
+    // Predator lunges in the chase games: LUNGE.wind seconds of warning (red ring), then the strike.
+    // Dodging during the warning is a Perfect Dodge; up to LUNGE.late seconds into the strike still dodges.
+    const LUNGE = { wind: 0.4, strike: 0.32, late: 0.12, perfectCoins: 5, counter: 1.5 };
+    PL.LUNGE = LUNGE;
+
     class Game {
         constructor(c) {
             this.c = c;
@@ -33,6 +52,12 @@
             this.coinTarget = [W - 96, 66];
             // Weather / time of day for this run (chases are always moody)
             this.mood = PL.pickMood(this.b, null, !!this.constructor.CHASE);
+            this.weather = PL.WEATHER_FX[this.mood] || null;
+            this.weatherShown = false;
+            this.frostTimer = PL.rand(9, 14);
+            this.frostFish = 0;
+            this.perfectDodges = 0;
+            this.lunge = null;
         }
         burst(x, y, color, n) {
             PL.fx.burst(x, y, { color, n: n || 10, speed: 220, life: 0.6 });
@@ -89,10 +114,31 @@
         }
         // Counts down to the next power-up; the game decides where to put it
         powerDue(dt) {
-            this.powerTimer -= dt;
+            this.powerTimer -= dt * ((this.weather && this.weather.drops) || 1);
             if (this.powerTimer > 0) return false;
             this.powerTimer = PL.rand(12, 18);
             return true;
+        }
+        // Blizzard only: a rare Frost Fish every so often (placed by each game, like a power-up)
+        frostDue(dt) {
+            if (!this.weather || !this.weather.frost) return false;
+            this.frostTimer -= dt;
+            if (this.frostTimer > 0) return false;
+            this.frostTimer = PL.rand(12, 18);
+            return true;
+        }
+        addFrostFish(x, y) {
+            this.pickups.push({ x, y, kind: "frostfish", t: 0 });
+        }
+        catchFrostFish(x, y) {
+            const val = this.coinValue(FROST_FISH_VALUE);
+            this.frostFish++;
+            this.coins += val;
+            this.happyT = 0.6;
+            PL.fx.banner("FROST FISH!", "#b3e5fc", "+" + val + " coins");
+            PL.fx.burst(x, y, { n: 22, color: ["#e1f5fe", "#81d4fa", "#ffffff"], shape: "star", speed: 260, gravity: 0, life: 0.7 });
+            for (let i = 0; i < 3; i++) PL.fx.flyCoin(x, y, this.coinTarget[0], this.coinTarget[1]);
+            PL.sfx("catch");
         }
         movePickups(dx, dy) {
             for (const p of this.pickups) {
@@ -117,6 +163,7 @@
                 if (dist < r + (p.kind === "coin" ? 14 : 22)) {
                     p.got = true;
                     if (p.kind === "coin") this.collectCoin(sx, sy, 1);
+                    else if (p.kind === "frostfish") this.catchFrostFish(sx, sy);
                     else this.gainPower(p.kind, sx, sy);
                 }
             }
@@ -140,6 +187,7 @@
                 const x = p.x - (offX || 0), y = p.y - (offY || 0);
                 if (x < -40 || x > W + 40) continue;
                 if (p.kind === "coin") PL.drawCoin(ctx, x, y, this.t + p.t);
+                else if (p.kind === "frostfish") PL.drawFrostFish(ctx, x, y, this.t + p.t);
                 else PL.drawPowerup(ctx, x, y, p.kind, this.t + p.t);
             }
         }
@@ -172,12 +220,101 @@
             this.breakCombo(x, y);
         }
 
+        // ---------- Predator lunges (chase games) ----------
+        // Every few seconds the chaser winds up (red ring for LUNGE.wind seconds), then strikes.
+        // pressed: the game's dodge move was just pressed. ready: the chaser can lunge right now.
+        // Returns "perfect" (dodged during the wind-up), "dodge" (just in time), "hit", or null.
+        stepLunge(dt, pressed, ready) {
+            const L = this.lunge || (this.lunge = { phase: "idle", t: PL.rand(6, 9), dodged: false, hitDone: false });
+            L.t -= dt;
+            if (L.phase === "idle") {
+                if (L.t <= 0) {
+                    if (!ready || this.over) {
+                        L.t = 0.5;
+                        return null;
+                    }
+                    L.phase = "wind";
+                    L.t = LUNGE.wind;
+                    L.dodged = false;
+                    L.hitDone = false;
+                    PL.sfx("lunge");
+                }
+                return null;
+            }
+            if (L.phase === "wind") {
+                if (pressed) {
+                    L.dodged = true;
+                    L.phase = "strike";
+                    L.t = LUNGE.strike;
+                    return "perfect";
+                }
+                if (L.t <= 0) {
+                    L.phase = "strike";
+                    L.t = LUNGE.strike;
+                }
+                return null;
+            }
+            // Strike
+            let ev = null;
+            if (!L.dodged && !L.hitDone) {
+                if (pressed && LUNGE.strike - L.t <= LUNGE.late) {
+                    L.dodged = true;
+                    ev = "dodge";
+                } else if (LUNGE.strike - L.t > LUNGE.late) {
+                    L.hitDone = true;
+                    ev = "hit";
+                }
+            }
+            if (L.t <= 0) {
+                L.phase = "idle";
+                L.t = PL.rand(5, 9) - this.hard01() * 2;
+            }
+            return ev;
+        }
+        hard01() {
+            return Math.min(1, this.t / 120);
+        }
+        // 0..1 progress of the red warning ring, or -1 when there's no wind-up
+        lungeWind() {
+            const L = this.lunge;
+            return L && L.phase === "wind" ? 1 - L.t / LUNGE.wind : -1;
+        }
+        // How far the chaser has surged forward (0..1) during a strike, for drawing
+        lungeSurge() {
+            const L = this.lunge;
+            return L && L.phase === "strike" ? Math.sin((1 - L.t / LUNGE.strike) * Math.PI) : 0;
+        }
+        perfectDodge(x, y) {
+            this.perfectDodges++;
+            PL.fx.slowmo(0.45, 0.3);
+            PL.fx.banner("PERFECT DODGE!", "#ffea00", "Counter-attack x" + LUNGE.counter + "!");
+            PL.fx.burst(x, y, { n: 24, color: ["#ffea00", "#ffffff", "#ff9100"], shape: "star", speed: 300, gravity: 0, life: 0.6 });
+            this.collectCoin(x, y - 30, LUNGE.perfectCoins);
+            this.clean(x, y - 60, null);
+            PL.sfx("perfect");
+        }
+        plainDodge(x, y) {
+            this.popup("Dodged!", x, y - 50, "#b9f6ca");
+            PL.fx.dust(x, y, 4);
+        }
+        drawLunge(ctx, hx, hy, r) {
+            const k = this.lungeWind();
+            if (k >= 0) PL.drawLungeRing(ctx, hx, hy, r, k, this.t);
+        }
+        // Shown once at the start when the weather changes the rules
+        weatherBanner() {
+            if (this.weatherShown || !this.weather || this.t < 1.2) return;
+            this.weatherShown = true;
+            PL.fx.banner(this.weather.name, this.weather.color, this.weather.sub);
+        }
+
         stepCommon(dt) {
             this.t += dt;
             this.inv = Math.max(0, this.inv - dt);
             this.happyT = Math.max(0, this.happyT - dt);
             this.powers.magnet = Math.max(0, this.powers.magnet - dt);
             this.powers.double = Math.max(0, this.powers.double - dt);
+            this.weatherBanner();
         }
         // Penguin's face: dizzy when hit, scared when the chaser is close, happy after a coin
         face(danger) {
@@ -221,9 +358,14 @@
         }
         // value is the run's score number (meters, walls, fish) used for stars, bests and missions
         result(stat, xpBase, scoreText, value) {
+            const wxp = (this.weather && this.weather.xp) || 1;
             return {
                 stat,
-                xp: Math.round(xpBase * this.b.xpMult * (1 + Math.min(0.25, this.bestCombo * 0.01))),
+                xp: Math.round(xpBase * this.b.xpMult * (1 + Math.min(0.25, this.bestCombo * 0.01)) * wxp),
+                weather: this.weather ? this.mood : null,
+                weatherXp: wxp,
+                perfectDodges: this.perfectDodges,
+                frostFish: this.frostFish,
                 staminaXp: Math.round((6 + this.t * 0.35) * this.b.xpMult),
                 coins: this.coins,
                 score: scoreText,
@@ -236,6 +378,7 @@
     // ---------------- SWIMMING ----------------
     // A predator chases you. Land chunks float at the surface: dive under them,
     // or leap out of the water and run across the top. It keeps getting faster.
+    const SWIM_SETBACK = 75; // how much closer a mistake lets the predator get
     class SwimGame extends Game {
         constructor(c) {
             super(c);
@@ -315,6 +458,7 @@
             for (const o of this.obs) o.x -= move;
             this.movePickups(-move, 0);
             if (this.powerDue(dt)) this.addPower(W + 40, PL.rand(this.surface + 50, this.floor - 60));
+            if (this.frostDue(dt)) this.addFrostFish(W + 60, PL.rand(this.surface + 60, this.floor - 70));
             for (const j of this.jellies) {
                 j.x -= move;
                 j.y = j.y0 + Math.sin(this.t * 1.8 + j.ph) * 45;
@@ -417,7 +561,7 @@
                                     o.ghost = true;
                                 } else {
                                     this.hitFx(this.px + hw, this.py);
-                                    this.predX += 75; // mistakes let the predator lunge closer
+                                    this.predX += SWIM_SETBACK; // mistakes let the predator lunge closer
                                     this.popup("Blocked!", this.px, this.py - 40, "#ff8a80");
                                 }
                             }
@@ -433,9 +577,21 @@
                     this.px -= 70;
                     this.stun = 0.5;
                     this.hitFx(this.px, this.py);
-                    this.predX += 75;
+                    this.predX += SWIM_SETBACK;
                     this.popup("Stung!", this.px, this.py - 40, "#ff8a80");
                 }
+            }
+            // Predator lunges: a fresh ↑ / ↓ / jump while the red ring flashes is a Perfect Dodge
+            const lev = this.stepLunge(dt, I.hit("up") || I.hit("down") || I.hit("action"), this.mode === "swim" && this.stun <= 0);
+            if (lev === "perfect") {
+                this.perfectDodge(this.px, this.py);
+                this.predX -= SWIM_SETBACK * LUNGE.counter; // counter-attack: knock it back
+                PL.fx.burst(this.predX + 60, this.predY, { n: 14, color: ["#ffffff", "#b3e5fc"], speed: 220, life: 0.5 });
+            } else if (lev === "dodge") this.plainDodge(this.px, this.py);
+            else if (lev === "hit" && !this.useShield(this.px, this.py)) {
+                this.hitFx(this.px, this.py);
+                this.predX += SWIM_SETBACK;
+                this.popup("Bitten!", this.px, this.py - 40, "#ff8a80");
             }
             // Swim back up to your normal spot when nothing is in the way
             if (!blocked && this.px < this.baseX) this.px = Math.min(this.baseX, this.px + (30 + this.lv * 2.5) * dt);
@@ -464,7 +620,8 @@
 
             // Predator creeps closer; a better swimmer pulls away
             // The predator only gains when you make a mistake; swim cleanly and it drops back
-            this.predX = Math.max(70, this.predX - (10 + this.lv * 0.3) * dt);
+            // (after a counter-attack it's pushed back further and swims back up to its spot)
+            this.predX = this.predX < 70 ? Math.min(70, this.predX + 45 * dt) : Math.max(70, this.predX - (10 + this.lv * 0.3) * dt);
             this.predY = PL.lerp(this.predY, PL.clamp(this.py, this.surface + 30, this.floor - 40), dt * 1.5);
             if (this.predX >= this.px - 40) {
                 this.over = true;
@@ -502,7 +659,9 @@
             this.drawPickups(ctx);
             for (const j of this.jellies) PL.drawJelly(ctx, j.x, j.y, this.t + j.ph, j.hit);
 
-            PL.drawPredator(ctx, b.predator, this.predX, this.predY, 0.85, this.t, 1 - gap);
+            const lx = this.predX + Math.max(0, this.lungeWind()) * 20 + this.lungeSurge() * 70;
+            PL.drawPredator(ctx, b.predator, lx, this.predY, 0.85, this.t, Math.max(1 - gap, this.lungeSurge()));
+            this.drawLunge(ctx, Math.max(46, lx - 18), this.predY, 42);
 
             if (!this.flashPenguin()) {
                 const look = this.c.look;
@@ -537,6 +696,7 @@
     // ---------------- WADDLING ----------------
     // Side-view runner like Duck Life's running: jump over things on the
     // ground, belly-slide under things overhead. It keeps speeding up.
+    const WADDLE_SETBACK = 60;
     class WaddleGame extends Game {
         constructor(c) {
             super(c);
@@ -579,6 +739,7 @@
             for (const o of this.obs) o.x -= move;
             this.movePickups(-move, 0);
             if (this.powerDue(dt)) this.addPower(W + 40, this.gy - 120);
+            if (this.frostDue(dt)) this.addFrostFish(W + 60, this.gy - 135);
             this.obs = this.obs.filter((o) => o.x > -80);
 
             // What the penguin stands on: the ground, or the top of a block
@@ -630,7 +791,7 @@
                 blocked = true;
                 if (!o.hit) {
                     o.hit = true;
-                    if (this.hurt(this.px + PW, this.gy - this.jy - 30)) this.chaserX += 60; // a stumble lets it catch up
+                    if (this.hurt(this.px + PW, this.gy - this.jy - 30)) this.chaserX += WADDLE_SETBACK; // a stumble lets it catch up
                 }
             }
             if (!blocked && this.px < 230) this.px = Math.min(230, this.px + (60 + this.lv * 2) * dt);
@@ -647,8 +808,20 @@
                 this.dustT = 0.22;
                 PL.fx.dust(this.px - 8, this.gy - this.jy, 1);
             }
+            // Chaser lunges: jump or duck while the red ring flashes for a Perfect Dodge
+            const lev = this.stepLunge(dt, I.hit("up") || I.hit("action") || I.hit("down"), true);
+            const py = this.gy - this.jy - 33;
+            if (lev === "perfect") {
+                this.perfectDodge(this.px, py);
+                this.chaserX -= WADDLE_SETBACK * LUNGE.counter;
+            } else if (lev === "dodge") this.plainDodge(this.px, this.gy - this.jy);
+            else if (lev === "hit" && this.hurt(this.px, py)) {
+                this.chaserX += WADDLE_SETBACK;
+                this.popup("Grabbed!", this.px, py - 40, "#ff8a80");
+            }
             // Only mistakes bring the chaser closer; clean running lets it fall back
-            this.chaserX = Math.max(-40, this.chaserX - (8 + this.lv * 0.25) * dt);
+            // (after a counter-attack it's knocked further back and runs back up)
+            this.chaserX = this.chaserX < -40 ? Math.min(-40, this.chaserX + 40 * dt) : Math.max(-40, this.chaserX - (8 + this.lv * 0.25) * dt);
             if (this.px - 12 <= this.chaserX + 60) {
                 this.over = true;
                 this.caught = true;
@@ -669,7 +842,10 @@
             ctx.globalAlpha = 1;
             PL.drawSpeedLines(ctx, this.speed, this.t, 120, this.gy - 10);
             this.drawPickups(ctx);
-            PL.drawLandPredator(ctx, b.chaser, this.chaserX, this.gy, 0.95, this.t, 1 - gap);
+            // Winding up, it steps into view; striking, it surges forward
+            const lx = this.chaserX + Math.max(0, this.lungeWind()) * 60 + this.lungeSurge() * 80;
+            PL.drawLandPredator(ctx, b.chaser, lx, this.gy, 0.95, this.t, Math.max(1 - gap, this.lungeSurge()));
+            this.drawLunge(ctx, Math.max(50, lx + 30), this.gy - 58, 44);
             for (const o of this.obs) {
                 if (o.high) PL.drawOverhead(ctx, b, o.x, this.gy, 52, this.t);
                 else PL.drawObstacle(ctx, b.obstacle, o.x, this.gy, 1);
@@ -1467,6 +1643,7 @@
             for (const o of this.obs) o.x -= move;
             this.movePickups(-move, 0);
             if (this.powerDue(dt)) this.addPower(W + 40, this.gy - 3 * UNIT - 60);
+            if (this.frostDue(dt)) this.addFrostFish(W + 60, this.gy - 3 * UNIT - 100);
 
             // Stand on the ground or on top of a wall you landed on
             const PW = 12, WALL = 16, BAR = 38;
@@ -1704,6 +1881,7 @@
     // and land smoothly. The seal is a steady slider: it only catches up when
     // you lose speed (bumpy landings, holding uphill, not diving).
     const PEN_X = 300; // where the penguin sits on screen
+    const SLIDE_SETBACK = 160;
     class SlideGame extends Game {
         constructor(c) {
             super(c);
@@ -1711,6 +1889,7 @@
             this.hint = "HOLD SPACE going down a hill · LET GO going up to fly · HOLD again to dive onto the next downhill!";
             this.lv = c.lv.slide;
             this.P = PL.slideParams(this.lv);
+            if (this.weather && this.weather.slide) PL.slickSlide(this.P, this.weather.slide);
             this.keys = [{ x: -500, y: 140 }, { x: 0, y: 0, peak: true }];
             this.hills = new Hills(this.keys);
             this.decor = [];
@@ -1801,6 +1980,10 @@
                 const ax = B.x + 1200;
                 this.addPower(ax, this.hills.at(ax).y - 40);
             }
+            if (this.frostDue(dt)) {
+                const fishX = B.x + 1500;
+                this.addFrostFish(fishX, this.hills.at(fishX).y - 90);
+            }
             this.updatePickups(dt, B.x - this.camX, B.y - this.camY - 18, 26, this.camX, this.camY);
 
             // The seal: a steady slider that gets a bit faster over time
@@ -1818,6 +2001,21 @@
                     PL.sfx("hit");
                     PL.fx.shake(14, 0.45);
                     PL.fx.flash("#ff1744", 0.25, 0.2);
+                }
+            }
+
+            // Seal lunges (only once it's close enough to see): tap SPACE / ↓ while the red ring flashes
+            const lev = this.stepLunge(dt, I.hit("action") || I.hit("down"), B.x - this.sealX < PEN_X - 40);
+            if (lev) {
+                const sx = B.x - this.camX, sy = B.y - this.camY;
+                if (lev === "perfect") {
+                    this.perfectDodge(sx, sy - 20);
+                    this.sealX -= SLIDE_SETBACK * LUNGE.counter;
+                } else if (lev === "dodge") this.plainDodge(sx, sy);
+                else if (!this.useShield(sx, sy - 20)) {
+                    this.hitFx(sx, sy - 20);
+                    B.s = Math.max(this.P.minS, B.s * 0.75);
+                    this.popup("Nipped! Speed lost", sx, sy - 70, "#ff8a80");
                 }
             }
 
@@ -1896,8 +2094,10 @@
             // The seal, belly-sliding on the snow behind you
             const sealSX = this.sealX - cx;
             if (sealSX > -50) {
-                const sg = this.hills.at(this.sealX);
-                PL.drawSlideSeal(ctx, sealSX, sg.y - cy, sg.angle, 0.55, this.t, 1 - gap);
+                const lw = this.sealX + this.lungeSurge() * 60;
+                const sg = this.hills.at(lw);
+                PL.drawSlideSeal(ctx, lw - cx, sg.y - cy, sg.angle, 0.55, this.t, Math.max(1 - gap, this.lungeSurge()));
+                this.drawLunge(ctx, lw - cx + Math.cos(sg.angle) * 28, sg.y - cy - 20 + Math.sin(sg.angle) * 28, 36);
             } else {
                 // Off screen: an arrow on the left edge shows how far back it is
                 const ay = PL.clamp(this.hills.at(cx).y - cy - 40, 90, H - 90);

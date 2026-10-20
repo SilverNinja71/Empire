@@ -112,7 +112,11 @@ window.PL = window.PL || {};
         best: () => [523, 659, 784, 659, 784, 1047].forEach((f, i) => tone(f, 0.16, "square", null, i * 0.1, 0.07)),
         chest: () => { tone(220, 0.15, "square", 440, 0, 0.07); [784, 988, 1175, 1568].forEach((f, i) => tone(f, 0.14, "triangle", null, 0.15 + i * 0.08, 0.08)); },
         mission: () => [880, 1109, 1319].forEach((f, i) => tone(f, 0.15, "triangle", null, i * 0.09, 0.08)),
-        whoosh: () => tone(900, 0.2, "sawtooth", 200, 0, 0.03)
+        whoosh: () => tone(900, 0.2, "sawtooth", 200, 0, 0.03),
+        // A predator winding up to lunge, and dodging it perfectly
+        lunge: () => { tone(140, 0.32, "sawtooth", 260, 0, 0.07); tone(210, 0.32, "square", 380, 0, 0.03); },
+        perfect: () => { tone(1568, 0.08, "square", null, 0, 0.06); [784, 1175, 1568, 2093].forEach((f, i) => tone(f, 0.12, "triangle", null, 0.06 + i * 0.05, 0.07)); },
+        trophy: () => [659, 784, 988, 1319, 1568].forEach((f, i) => tone(f, 0.16, "triangle", null, i * 0.08, 0.08))
     };
 
     PL.sfx = function (name) {

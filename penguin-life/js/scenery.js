@@ -1291,12 +1291,13 @@
     let hideSun = false;
     let cloudMood = "day";
 
+    const HEAVY_CLOUDS = { storm: ["#6b7682", "#4f5a66"], rain: ["#97a2ad", "#7a8692"], snow: ["#d3dbe2", "#b5c0ca"], blizzard: ["#c4cdd5", "#a3afba"] };
     function cloudsLayer(ctx, camX, t, h) {
         const top = Math.max(20, Math.min(70, h - 260));
-        const heavy = { storm: ["#6b7682", "#4f5a66"], rain: ["#97a2ad", "#7a8692"], snow: ["#d3dbe2", "#b5c0ca"] }[cloudMood];
+        const heavy = HEAVY_CLOUDS[cloudMood];
         if (heavy) {
-            // Low, heavy clouds rolling past (fast in a storm)
-            const speed = cloudMood === "storm" ? 40 : 18;
+            // Low, heavy clouds rolling past (fast in a storm or a blizzard)
+            const speed = cloudMood === "storm" || cloudMood === "blizzard" ? 40 : 18;
             each(camX - t * speed, 0.1, 210, (i, x) => {
                 const w = 110 + hash(i + 9) * 70, y = top - 10 + hash(i) * 50;
                 PL.blob(ctx, [[x, y, w * 0.32], [x - w * 0.34, y + w * 0.1, w * 0.26], [x + w * 0.36, y + w * 0.08, w * 0.28], [x + w * 0.04, y - w * 0.16, w * 0.28]], heavy[0], 0, heavy[1]);
@@ -1308,17 +1309,18 @@
     }
 
     // ---------- Weather and time of day ----------
-    // Moods: day, sunset, night, aurora, fog, snow, rain, storm.
+    // Moods: day, sunset, night, aurora, fog, snow, blizzard, rain, storm.
     // Each biome has its own mix; chases never get a plain sunny sky.
+    // Blizzard and Northern Lights also change the rules (see PL.WEATHER_FX in training.js).
     const MOODS = {
         zoo: { day: 4, sunset: 2, night: 1, rain: 1, fog: 1 },
-        arctic: { day: 3, sunset: 1, snow: 2, aurora: 1, fog: 1 },
-        northpole: { day: 3, snow: 2 }, // it's always night at the North Pole
+        arctic: { day: 3, sunset: 1, snow: 2, blizzard: 1, aurora: 1, fog: 1 },
+        northpole: { day: 3, snow: 2, blizzard: 1 }, // it's always night at the North Pole
         iceland: { day: 2, fog: 2, sunset: 1, aurora: 1, rain: 1 },
-        greenland: { day: 2, snow: 2, sunset: 1, aurora: 1 },
-        siberia: { snow: 3, day: 1, fog: 1, night: 1 },
+        greenland: { day: 2, snow: 2, blizzard: 1, sunset: 1, aurora: 1 },
+        siberia: { snow: 3, blizzard: 2, day: 1, fog: 1, night: 1 },
         australia: { day: 4, sunset: 2, night: 1, rain: 1 },
-        antarctica: { day: 2, snow: 2, aurora: 1, fog: 1, sunset: 1 }
+        antarctica: { day: 2, snow: 2, blizzard: 2, aurora: 1, fog: 1, sunset: 1 }
     };
     PL.pickMood = function (b, seed, chase) {
         const rng = seed === undefined || seed === null ? Math.random : PL.makeRng(seed + 7);
@@ -1341,7 +1343,7 @@
         if ((h >= 17 && h < 20) || (h >= 5 && h < 7)) return "sunset";
         return ["arctic", "greenland", "antarctica", "iceland"].includes(b.id) ? "aurora" : "night";
     };
-    PL.MOOD_NAMES = { day: "Sunny", sunset: "Sunset", night: "Night", aurora: "Northern Lights", fog: "Foggy", snow: "Snowing", rain: "Rainy", storm: "Stormy" };
+    PL.MOOD_NAMES = { day: "Sunny", sunset: "Sunset", night: "Night", aurora: "Northern Lights", fog: "Foggy", snow: "Snowing", blizzard: "Blizzard", rain: "Rainy", storm: "Stormy" };
 
     // [sky top color, sky bottom color, how much of it to mix in]
     const SKY = {
@@ -1350,13 +1352,14 @@
         aurora: ["#081a2c", "#183a4f", 0.85],
         fog: ["#c3cdd4", "#e3e8eb", 0.7],
         snow: ["#a9b6c1", "#e1e7ec", 0.6],
+        blizzard: ["#b9c4cd", "#eef2f5", 0.75],
         rain: ["#6f7d8a", "#a9b4be", 0.6],
         storm: ["#26303b", "#3a4552", 0.65]
     };
     // Haze laid over the far scenery so it sits behind the action
     const HAZE = {
         day: null, sunset: ["#ff9e6b", 0.28], night: ["#0b1430", 0.5], aurora: ["#081a2c", 0.5],
-        fog: ["#dfe6ea", 0.58], snow: ["#e6ecf0", 0.4], rain: ["#7d8a96", 0.35], storm: ["#1b2531", 0.42]
+        fog: ["#dfe6ea", 0.58], snow: ["#e6ecf0", 0.4], blizzard: ["#eef2f5", 0.6], rain: ["#7d8a96", 0.35], storm: ["#1b2531", 0.42]
     };
 
     function normMood(b, mood) {
@@ -1477,6 +1480,30 @@
                 ctx.globalAlpha = 0.55 + r * 0.1;
                 circ(ctx, x, y, r);
             }
+            ctx.globalAlpha = 1;
+        } else if (mood === "blizzard") {
+            // Thick snow driven sideways by the wind, gusts of white and drifting streaks
+            const gust = 0.5 + 0.5 * Math.sin(t * 0.9);
+            ctx.fillStyle = "#ffffff";
+            for (let i = 0; i < 150; i++) {
+                const r = 1.2 + hash(i + 11) * 2.8;
+                const x = (((hash(i) * 1100 - t * (260 + r * 70) * (0.7 + gust * 0.6) - scroll * (0.3 + r * 0.1)) % 1100) + 1100) % 1100 - 70;
+                const y = (hash(i + 40) * 600 + t * (90 + r * 30) + Math.sin(t * 2 + i) * 10) % 600 - 30;
+                ctx.globalAlpha = 0.5 + r * 0.12;
+                circ(ctx, x, y, r);
+            }
+            ctx.strokeStyle = "rgba(255,255,255,0.35)";
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            for (let i = 0; i < 14; i++) {
+                const x = (((hash(i + 200) * 1300 - t * 900 - scroll * 0.6) % 1300) + 1300) % 1300 - 150;
+                const y = hash(i + 230) * 540;
+                ctx.moveTo(x, y);
+                ctx.lineTo(x + 60 + hash(i + 260) * 70, y + 6);
+            }
+            ctx.stroke();
+            ctx.globalAlpha = 0.1 + gust * 0.12;
+            ctx.fillRect(0, 0, W, PL.H);
             ctx.globalAlpha = 1;
         } else if (mood === "fog") {
             ctx.fillStyle = "#eef2f4";

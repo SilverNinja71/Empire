@@ -1294,6 +1294,26 @@
         ctx.restore();
     };
 
+    // Rare Frost Fish (Blizzard weather): an icy fish in a glowing, sparkling halo
+    PL.drawFrostFish = function (ctx, x, y, t) {
+        const bob = Math.sin(t * 3) * 4;
+        const glow = 0.35 + Math.abs(Math.sin(t * 4)) * 0.25;
+        ctx.save();
+        ctx.globalAlpha = glow;
+        ctx.fillStyle = "#b3e5fc";
+        circ(ctx, x, y + bob, 26);
+        ctx.globalAlpha = 1;
+        ctx.restore();
+        PL.drawFish(ctx, x, y + bob, 1.15, 1, "#81d4fa", t);
+        // Twinkles around it
+        ctx.fillStyle = "#ffffff";
+        for (let i = 0; i < 3; i++) {
+            const a = t * 2 + i * 2.1;
+            const k = 1.5 + Math.abs(Math.sin(t * 5 + i)) * 2;
+            circ(ctx, x + Math.cos(a) * 24, y + bob + Math.sin(a) * 18, k);
+        }
+    };
+
     PL.drawHeart = function (ctx, x, y, full) {
         ctx.beginPath();
         ctx.moveTo(x, y + 8);
