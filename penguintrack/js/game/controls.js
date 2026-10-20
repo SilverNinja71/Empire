@@ -1,26 +1,40 @@
 // Keyboard, gamepad and touch -> one core Input per tick, plus edge-detected
-// actions (respawn, restart, cameras, ghost toggle, pause) and gamepad menu
-// navigation. Bindings use KeyboardEvent.code so they work on every layout.
+// actions (respawn, restart, cameras, ghost toggle, pause, Quick TAS markers)
+// and gamepad menu navigation. Bindings use KeyboardEvent.code so they work on
+// every layout. Quick TAS keys only act while setTasMode(true) is on, and then
+// win over the race actions they share a key with (see TAS_SHADOWED).
 import { STEER_MAX } from '../core/constants.js';
 import { clampSteer } from '../core/input.js';
-import { ACTIONS } from './settings.js';
+import { ACTIONS, TAS_SHADOWED } from './settings.js';
 import { h, isTypingTarget } from './dom.js';
 import { iconSvg } from './icons.js';
 
 const HOLD = ['gas', 'brake', 'left', 'right'];
-const EDGE = ['respawn', 'restart', 'camera1', 'camera2', 'camera3', 'cameraCycle', 'ghost', 'pause'];
+const TAS_EDGE = ['tasMark', 'tasRewind', 'tasPrev', 'tasNext'];
+const EDGE = ['respawn', 'restart', 'camera1', 'camera2', 'camera3', 'cameraCycle', 'ghost', 'pause', ...TAS_EDGE];
 
 // Standard gamepad mapping (https://w3c.github.io/gamepad/#remapping).
 const BTN = { A: 0, B: 1, X: 2, Y: 3, LB: 4, RB: 5, LT: 6, RT: 7, BACK: 8, START: 9, UP: 12, DOWN: 13, LEFT: 14, RIGHT: 15 };
 const PAD_EDGES = [[BTN.B, 'respawn'], [BTN.Y, 'restart'], [BTN.BACK, 'restart'], [BTN.RB, 'cameraCycle'], [BTN.START, 'pause']];
+// Quick TAS: LB marks, Y rewinds (Back still restarts), D-pad up / down cycle markers.
+const PAD_EDGES_TAS = [[BTN.B, 'respawn'], [BTN.Y, 'tasRewind'], [BTN.BACK, 'restart'], [BTN.RB, 'cameraCycle'], [BTN.START, 'pause'],
+    [BTN.LB, 'tasMark'], [BTN.UP, 'tasNext'], [BTN.DOWN, 'tasPrev']];
 const NAV_REPEAT_DELAY = 380, NAV_REPEAT = 130;
+const TAP_WINDOW_MS = 100;   // input() calls further apart than this mean ticks were not running
 
 export class Controls {
     constructor(settings) {
         this.codes = new Set();           // keyboard codes held
-        this.byCode = new Map();          // code -> [action]
+        this.byCode = new Map();          // code -> [action], every binding
+        this._edgeRace = new Map();       // code -> [edge action] in a normal race
+        this._edgeTas = new Map();        // code -> [edge action] while Quick TAS runs
+        this.tas = false;
         this.edges = new Set();           // actions pressed since last consumed
         this.touch = { gas: false, brake: false, left: false, right: false };
+        // Hold controls pressed since the last tick read them: a tap shorter than a
+        // frame (pressed and released between two ticks) still drives one tick.
+        this.taps = { gas: false, brake: false, left: false, right: false };
+        this._lastInput = -Infinity;
         this.touchPointers = new Map();   // pointerId -> action
         this.pad = { connected: false, steer: 0, gas: false, brake: false, left: false, right: false, id: '' };
         this._padPrev = [];
@@ -58,19 +72,39 @@ export class Controls {
     setSettings(s) {
         this.settings = s;
         this.byCode.clear();
+        this._edgeRace.clear();
+        this._edgeTas.clear();
         for (const a of ACTIONS) {
             for (const code of s.bindings[a.id] || []) {
                 if (!this.byCode.has(code)) this.byCode.set(code, []);
                 this.byCode.get(code).push(a.id);
             }
         }
+        for (const [code, actions] of this.byCode) {
+            const race = actions.filter((a) => EDGE.includes(a) && !TAS_EDGE.includes(a));
+            const tas = actions.filter((a) => TAS_EDGE.includes(a));
+            // A TAS key only takes over race actions it may shadow; a key that also
+            // drives, respawns or pauses keeps doing that instead.
+            const keepsRace = actions.some((a) => !TAS_EDGE.includes(a) && !TAS_SHADOWED.includes(a));
+            const inTas = tas.length && !keepsRace ? tas : race;
+            if (race.length) this._edgeRace.set(code, race);
+            if (inTas.length) this._edgeTas.set(code, inTas);
+        }
         this._updateTouchVisibility();
+    }
+
+    /** Quick TAS key context on or off (the marker keys, pad buttons and touch buttons). */
+    setTasMode(on) {
+        this.tas = !!on;
+        for (const a of TAS_EDGE) this.edges.delete(a);
+        if (this.touchEl) this.touchEl.classList.toggle('tas', this.tas);
     }
 
     /** In play: game keys stop scrolling/navigating the page and the touch pad shows. */
     setActive(on) {
         this.active = !!on;
         this.edges.clear();
+        this._clearTaps();
         this._updateTouchVisibility();
     }
 
@@ -102,16 +136,27 @@ export class Controls {
      * the respawn edge into `respawn`.
      */
     input(out = {}) {
-        const kl = this._keyDown('left') || this.touch.left || this.pad.left;
-        const kr = this._keyDown('right') || this.touch.right || this.pad.right;
+        // Taps only count while ticks keep reading input: one left over from the
+        // countdown or a pause must not reach the first tick after it.
+        const now = performance.now();
+        const t = this.taps, live = now - this._lastInput < TAP_WINDOW_MS;
+        this._lastInput = now;
+        const kl = this._keyDown('left') || this.touch.left || this.pad.left || (live && t.left);
+        const kr = this._keyDown('right') || this.touch.right || this.pad.right || (live && t.right);
         let steer = 0;
         if (kl || kr) steer = (kr ? STEER_MAX : 0) - (kl ? STEER_MAX : 0);
         else steer = this.pad.steer;
         out.steer = clampSteer(steer);
-        out.gas = this._keyDown('gas') || this.touch.gas || this.pad.gas;
-        out.brake = this._keyDown('brake') || this.touch.brake || this.pad.brake;
+        out.gas = this._keyDown('gas') || this.touch.gas || this.pad.gas || (live && t.gas);
+        out.brake = this._keyDown('brake') || this.touch.brake || this.pad.brake || (live && t.brake);
         out.respawn = this.pressed('respawn');
+        this._clearTaps();
         return out;
+    }
+
+    _clearTaps() {
+        const t = this.taps;
+        t.gas = t.brake = t.left = t.right = false;
     }
 
     _keyDown(action) {
@@ -126,10 +171,11 @@ export class Controls {
         if (isTypingTarget(e.target)) return;
         if (e.metaKey || e.ctrlKey || e.altKey) return;   // leave browser shortcuts alone
         this._setDevice('keyboard');
-        const actions = this.byCode.get(e.code);
-        if (!actions) return;
+        if (!this.byCode.has(e.code)) return;
         this.codes.add(e.code);
-        if (!e.repeat) for (const a of actions) if (EDGE.includes(a)) this.edges.add(a);
+        if (!e.repeat) for (const a of this.byCode.get(e.code)) if (Object.hasOwn(this.taps, a)) this.taps[a] = true;
+        const edges = (this.tas ? this._edgeTas : this._edgeRace).get(e.code);
+        if (edges && !e.repeat) for (const a of edges) this.edges.add(a);
         // Only in play: menus keep arrows/Enter/Backspace for navigation and text.
         if (this.active) e.preventDefault();
     }
@@ -143,6 +189,7 @@ export class Controls {
         // Keys released while the window was in the background never send keyup.
         this.codes.clear();
         for (const k of Object.keys(this.touch)) this.touch[k] = false;
+        this._clearTaps();
     }
 
     _onPointer(e) {
@@ -202,7 +249,7 @@ export class Controls {
             const was = !!this._padPrev[i];
             if (now2 && !was) {
                 any = true;
-                for (const [btn, action] of PAD_EDGES) if (btn === i) this.edges.add(action);
+                for (const [btn, action] of this.tas ? PAD_EDGES_TAS : PAD_EDGES) if (btn === i) this.edges.add(action);
                 if (i === BTN.A) this._nav.edges.add('accept');
                 if (i === BTN.B) this._nav.edges.add('back');
             }
@@ -267,7 +314,13 @@ export class Controls {
                 btn('gas', 'Gas', null, 'gas')),
             h('div.pt-touch-top',
                 btn('cameraCycle', 'Camera', 'camera', 'small'),
-                btn('pause', 'Pause', 'pause', 'small')));
+                btn('pause', 'Pause', 'pause', 'small')),
+            h('div.pt-touch-tas',
+                btn('tasPrev', 'Previous marker', 'back', 'small'),
+                btn('tasMark', 'Drop marker', 'flag', 'small'),
+                btn('tasRewind', 'Rewind to marker', 'rewind', 'small'),
+                btn('tasNext', 'Next marker', 'next', 'small')));
+        el.classList.toggle('tas', this.tas);
         el.addEventListener('pointerdown', (e) => {
             const b = e.target.closest('.pt-touch-btn');
             if (!b) return;
@@ -278,7 +331,7 @@ export class Controls {
             } catch (err) { /* ignore */ }
             this.touchPointers.set(e.pointerId, action);
             b.classList.add('down');
-            if (HOLD.includes(action)) this.touch[action] = true;
+            if (HOLD.includes(action)) this.touch[action] = this.taps[action] = true;
             else this.edges.add(action);
         });
         const release = (e) => {
