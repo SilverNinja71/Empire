@@ -1082,7 +1082,7 @@
                 }
                 headY = by - 34;
             } else {
-                PL.drawPenguin(ctx, x, y - r.airH, sc, Object.assign(opts, { walk: !r.air && r.stumble <= 0, pose: r.air ? "jump" : "stand" }));
+                PL.drawPenguin(ctx, x, y - r.airH, sc, Object.assign(opts, { walk: !r.air && r.stumble <= 0, pose: r.air ? "jump" : "stand", body: r }));
                 headY = y - r.airH - 80 * sc;
             }
             // Boost glow trail

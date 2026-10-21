@@ -676,7 +676,7 @@
                     ctx.restore();
                 } else if (this.mode === "air") {
                     // Upright jump, feet at py so landing on a chunk lines up
-                    PL.drawPenguin(ctx, this.px, this.py, 0.9, { look, pose: "jump", t: this.t, face });
+                    PL.drawPenguin(ctx, this.px, this.py, 0.9, { look, pose: "jump", t: this.t, face, body: this });
                 } else PL.drawPenguin(ctx, this.px, this.py, 0.9, { look, pose: "swim", t: this.t, tilt: PL.clamp(this.vy / 900, -0.6, 0.6), face });
                 if (this.powers.shield) PL.drawShieldBubble(ctx, this.px, this.mode === "swim" ? this.py : this.py - 32, 40, this.t);
             }
@@ -1740,7 +1740,7 @@
             ctx.fillStyle = "rgba(0,0,0,0.2)";
             PL.ell(ctx, this.px, this.gy, 20 - Math.min(12, this.jy / 15), 5);
             if (!this.flashPenguin()) {
-                PL.drawPenguin(ctx, this.px, this.gy - this.jy, 0.95, { look: this.c.look, walk: !this.inAir, pose: this.inAir ? "jump" : "stand", t: this.t, face: this.face(false) });
+                PL.drawPenguin(ctx, this.px, this.gy - this.jy, 0.95, { look: this.c.look, walk: !this.inAir, pose: this.inAir ? "jump" : "stand", t: this.t, face: this.face(false), body: this });
                 if (this.powers.shield) PL.drawShieldBubble(ctx, this.px, this.gy - this.jy - 34, 42, this.t);
             }
             PL.drawWeather(ctx, this.mood, this.t, this.dist);
