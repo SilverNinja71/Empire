@@ -4108,7 +4108,8 @@ async function hostArena(want) {
   });
   peer.on('error', (e) => { clearTimeout(to); if (NET.mode === 'offline') netFail(); else roomMsg('Connection problem: ' + ((e && e.type) || 'unknown')); });
 }
-async function joinArena(raw) {
+// tries: an invite link keeps knocking for a while in case the host is still opening the arena
+async function joinArena(raw, tries = 0) {
   if (online()) return;
   const code = String(raw || '').trim().toUpperCase();
   if (code.length < 5) { roomMsg('Enter the 5-character code from the host.'); return; }
@@ -4128,7 +4129,8 @@ async function joinArena(raw) {
   });
   peer.on('error', (e) => {
     clearTimeout(to);
-    if (e && e.type === 'peer-unavailable') { leaveRoom(); setRoomBusyButtons(false); roomMsg('No live arena found for code ' + code + '.'); }
+    if (e && e.type === 'peer-unavailable' && tries > 0) { leaveRoom(); roomMsg('Waiting for arena ' + code + ' to open…'); setRoomBusyButtons(true); setTimeout(() => { setRoomBusyButtons(false); joinArena(code, tries - 1); }, 2500); }
+    else if (e && e.type === 'peer-unavailable') { leaveRoom(); setRoomBusyButtons(false); roomMsg('No live arena found for code ' + code + '.'); }
     else if (NET.mode === 'offline') netFail();
   });
 }
@@ -4576,7 +4578,7 @@ toggleHelp(innerWidth >= 980 && innerHeight >= 700 && !TOUCH.on);
 {
   const q = new URLSearchParams(location.search);
   const c = (q.get('room') || '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 5);
-  if (c.length === 5) { if (q.get('host') === '1') hostArena(c); else joinArena(c); }
+  if (c.length === 5) { if (q.get('host') === '1') hostArena(c); else joinArena(c, 5); }
 }
 requestAnimationFrame(frame);
 // ?dev=1 exposes internals for automated testing in the browser console
