@@ -38,8 +38,8 @@ DIRECTORY = os.path.dirname(HUB_DIR)  # the folder holding the hub and every gam
 GAMES = [
     ("Penguin League", "penguin-league/", "https://github.com/SilverNinja71/penguin-league.git"),
     ("Spear-Mace PVP", "mace-pvp/", "https://github.com/SilverNinja71/mace-pvp.git"),
-    ("Penguin Life", "penguin-life/", "https://github.com/SilverNinja71/penguin-life.git"),
-    ("Penguintrack", "penguintrack/", "https://github.com/SilverNinja71/penguintrack.git"),
+    ("Penguin Life", "Penguin-Life/", "https://github.com/SilverNinja71/Penguin-Life.git"),
+    ("Penguintrack", "Penguin-Track/", "https://github.com/SilverNinja71/Penguin-Track.git"),
     ("Stone Court Battlegrounds", "Elite-Ball-Brawl/", "https://github.com/SilverNinja71/Elite-Ball-Brawl.git"),
 ]
 

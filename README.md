@@ -9,8 +9,8 @@ Each game lives in its own repo:
 | :--- | :--- | :--- |
 | [`penguin-league`](https://github.com/SilverNinja71/penguin-league) | **Penguin League**: Rocket League-style soccer with jetpack penguins | [play](https://silverninja71.github.io/penguin-league/) |
 | [`mace-pvp`](https://github.com/SilverNinja71/mace-pvp) | **Spear-Mace PVP**: 2D aerial fighting inspired by Minecraft's Mace and Spear | [play](https://silverninja71.github.io/mace-pvp/) |
-| [`penguin-life`](https://github.com/SilverNinja71/penguin-life) | **Penguin Life**: a Duck Life-style game. Train your penguin, then race from the Zoo to the Arctic, the North Pole and beyond | [play](https://silverninja71.github.io/penguin-life/) |
-| [`penguintrack`](https://github.com/SilverNinja71/penguintrack) | **Penguintrack**: a snow-themed, Trackmania-style 3D racer with a track editor, replays, TAS tools and an AI training kit | [play](https://silverninja71.github.io/penguintrack/) |
+| [`Penguin-Life`](https://github.com/SilverNinja71/Penguin-Life) | **Penguin Life**: a Duck Life-style game. Train your penguin, then race from the Zoo to the Arctic, the North Pole and beyond | [play](https://silverninja71.github.io/Penguin-Life/) |
+| [`Penguin-Track`](https://github.com/SilverNinja71/Penguin-Track) | **Penguintrack**: a snow-themed, Trackmania-style 3D racer with a track editor, replays, TAS tools and an AI training kit | [play](https://silverninja71.github.io/Penguin-Track/) |
 | [`Elite-Ball-Brawl`](https://github.com/SilverNinja71/Elite-Ball-Brawl) | **Stone Court Battlegrounds**: 3D arena brawler with combos, ultimates and room codes | [play](https://silverninja71.github.io/Elite-Ball-Brawl/) |
 
 This repo holds:
@@ -28,8 +28,8 @@ mkdir silverninja && cd silverninja
 git clone https://github.com/SilverNinja71/Empire.git
 git clone https://github.com/SilverNinja71/mace-pvp.git
 git clone https://github.com/SilverNinja71/penguin-league.git
-git clone https://github.com/SilverNinja71/penguin-life.git
-git clone https://github.com/SilverNinja71/penguintrack.git
+git clone https://github.com/SilverNinja71/Penguin-Life.git
+git clone https://github.com/SilverNinja71/Penguin-Track.git
 git clone https://github.com/SilverNinja71/Elite-Ball-Brawl.git
 python3 Empire/server.py
 ```
