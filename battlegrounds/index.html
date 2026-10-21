@@ -208,6 +208,11 @@ button:focus-visible,input:focus-visible{outline:2px solid #fff;outline-offset:2
 #evChip i{width:8px;height:8px;border-radius:50%;background:var(--ult-full);box-shadow:0 0 8px var(--ult-full)}
 #evChip.live{border-color:rgba(255,207,58,.75);color:#fff6cf;box-shadow:0 0 14px rgba(255,207,58,.35)}
 #evChip.live i{animation:pulse .6s ease-in-out infinite alternate}
+#duelChip{display:inline-flex;align-items:center;gap:8px;max-width:100%;height:30px;padding:0 4px 0 12px;border-radius:999px;font-size:11px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:#ffe1dc;white-space:nowrap;pointer-events:auto;border-color:rgba(255,90,74,.6)}
+#duelChip[hidden]{display:none}
+#duelChip span{min-width:0;overflow:hidden;text-overflow:ellipsis}
+#duelChip i{flex:none;width:8px;height:8px;border-radius:50%;background:#ff5a4a;box-shadow:0 0 8px #ff5a4a}
+#duelChip .sbtn{height:22px;padding:0 10px;font-size:10px}
 #lockHud{width:100%;border-radius:10px;padding:7px 9px 8px;display:grid;gap:5px;border-color:rgba(255,106,90,.55)}
 #lockHud .lh{display:flex;align-items:baseline;justify-content:space-between;gap:10px;min-width:0}
 #lockHud .lh span{font-size:13px;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -356,6 +361,7 @@ body.touch .mini{height:52px}
 
   <div id="topc">
     <div id="evChip" class="glass" hidden><i></i><span id="evTxt">Golden Lantern</span></div>
+    <div id="duelChip" class="glass" hidden><i></i><span id="duelTxt"></span><button type="button" class="sbtn" id="duelWatch">Watch</button></div>
     <div id="lockHud" class="glass" hidden>
       <div class="lh"><span id="lockName">Target</span><small id="lockChar"></small></div>
       <div class="hp"><i class="lag" id="lockLag"></i><i class="fill" id="lockFill"></i><b><span class="tg">◎ LOCKED</span><span id="lockTxt">100</span></b></div>
@@ -1580,7 +1586,7 @@ function center(f, o) { return (o || new V3()).set(f.pos.x, f.pos.y + 1.1, f.pos
 function head(f) { return new V3(f.pos.x, f.pos.y + 2.2, f.pos.z); }
 function distH(a, b) { return Math.hypot(a.pos.x - b.pos.x, a.pos.z - b.pos.z); }
 function canHit(o) { return o && !o.dead && !o.invuln(); }
-function foes(f) { const out = []; for (const o of fighters) if (o !== f && !o.dead) out.push(o); return out; }
+function foes(f) { const sd = duelSide(f), out = []; for (const o of fighters) if (o !== f && !o.dead && duelSide(o) === sd) out.push(o); return out; }
 function inFront(f, o, range, arc = 0.3, dyMax = 2.2) {
   if (!canHit(o)) return false;
   const dx = o.pos.x - f.pos.x, dz = o.pos.z - f.pos.z, d = Math.hypot(dx, dz);
@@ -1751,6 +1757,7 @@ function parried(att, by) {   // the attacker side of a parry (also used when a 
 }
 function hit(att, tgt, dmg, o = {}) {
   if (!tgt || tgt.dead || tgt === att) return false;
+  if (DUEL.on && duelSide(att) !== duelSide(tgt)) return false;   // nobody hits across the duel wall
   if (tgt.remote) return hitRemote(att, tgt, dmg, o);
   if (tgt.lantern) return hitLantern(att, tgt, dmg);
   if (tgt.invuln()) return false;
@@ -1851,6 +1858,7 @@ function KO(t, att) {
 function spawnPoint() {
   for (let i = 0; i < 25; i++) {
     const a = rand(0, TAU), r = rand(8, 26), x = Math.cos(a) * r, z = Math.sin(a) * r;
+    if (Math.hypot(x - DUEL.x, z - DUEL.z) < DUEL.r + 2) continue;
     if (!fighters.some((f) => Math.hypot(f.pos.x - x, f.pos.z - z) < 4)) return new V3(x, 0, z);
   }
   return new V3(rand(-20, 20), 0, rand(-20, 20));
@@ -2239,6 +2247,107 @@ function updateEventChip() {
   else if (live) s = KOTH.mine > 0 ? 'Lantern · you ' + Math.floor(KOTH.mine) + ' / ' + LANTERN.need : 'Lantern live · first to ' + LANTERN.need + ' dmg';
   else if (KOTH.known) { const sec = Math.max(0, Math.ceil(KOTH.t)); s = 'Golden Lantern in ' + Math.floor(sec / 60) + ':' + String(sec % 60).padStart(2, '0'); }
   evChip.txt.textContent = s; evChip.el.hidden = !s; evChip.el.classList.toggle('live', live && !drop);
+}
+
+// =====================================================================
+// duel ring: two fighters inside start a 1v1 (full health, walled in, nobody outside can hit in or be hit);
+// the first K.O. ends it (or the clock: after 60 s the healthier fighter wins). Everyone else keeps brawling in the park, can sit on the bleachers, or Watch.
+// Every client works the duel out from the shared positions and fences in only its own fighters.
+// =====================================================================
+const DUEL = { x: -17, z: 17, r: 6.5, on: false, a: null, b: null, cool: 0, watch: false, mesh: null, wall: null, crowd: 0, t: 0, max: 60 };
+const duelSide = (f) => (DUEL.on && f && (f === DUEL.a || f === DUEL.b) ? 1 : 0);
+const inRing = (f, pad = 0) => Math.hypot(f.pos.x - DUEL.x, f.pos.z - DUEL.z) < DUEL.r + pad;
+const duelChip = { el: $('#duelChip'), txt: $('#duelTxt'), key: '' };
+const ringMat = shared(new THREE.MeshBasicMaterial({ color: '#ffffff' }));
+const wallMat = shared(new THREE.MeshBasicMaterial({ color: '#ff5a4a', transparent: true, opacity: 0, depthWrite: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending }));
+function buildDuelRing() {
+  const G = new THREE.Group(); G.position.set(DUEL.x, 0, DUEL.z); scene.add(G);
+  const ring = new THREE.Mesh(new THREE.RingGeometry(DUEL.r - 0.22, DUEL.r + 0.22, 64).rotateX(-PI / 2), ringMat);
+  ring.position.y = 0.02; G.add(ring);
+  // "1v1" painted in the middle
+  const tex = canvasTex(256, 128, (g, w, h) => {
+    g.fillStyle = 'rgba(255,255,255,0.92)'; g.font = '900 86px system-ui, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('1v1', w / 2, h / 2 + 4);
+  });
+  const label = new THREE.Mesh(new THREE.PlaneGeometry(3.4, 1.7).rotateX(-PI / 2), new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false, opacity: 0.75 }));
+  label.position.y = 0.018; G.add(label);
+  for (let i = 0; i < 8; i++) {   // corner posts with glossy caps
+    const a = (i / 8) * TAU, px = Math.cos(a) * (DUEL.r + 0.25), pz = Math.sin(a) * (DUEL.r + 0.25);
+    bx(G, 0.22, 0.9, 0.22, '#e9ecef', px, 0.45, pz); bx(G, 0.3, 0.12, 0.3, '#ff5a4a', px, 0.94, pz);
+  }
+  // bleachers: three white steps facing the ring from the corner of the park
+  const B = piv(G, -Math.SQRT1_2 * (DUEL.r + 3.2), 0, Math.SQRT1_2 * (DUEL.r + 3.2)); B.rotation.y = PI * 0.75;
+  for (let s = 0; s < 3; s++) { bx(B, 7, 0.45, 0.9, s % 2 ? '#cfd6de' : '#eef2f6', 0, 0.22 + s * 0.45, -s * 0.9).receiveShadow = true; bx(B, 7, 0.45 * (s + 1), 0.9, '#9aa3ad', 0, 0.225 * (s + 1), -s * 0.9 - 0.02); }
+  mergeMeshes(G);
+  G.traverse((m) => { if (m.isMesh && m.material === rigMat) { m.castShadow = true; m.receiveShadow = true; } });
+  DUEL.wall = new THREE.Mesh(new THREE.CylinderGeometry(DUEL.r, DUEL.r, 2.6, 48, 1, true), wallMat);
+  DUEL.wall.position.y = 1.3; DUEL.wall.visible = false; G.add(DUEL.wall);
+  DUEL.mesh = ring;
+}
+function startDuel(a, b) {
+  DUEL.on = true; DUEL.a = a; DUEL.b = b; DUEL.t = 0; DUEL.wall.visible = true; ringMat.color.set('#ff5a4a');
+  for (const f of [a, b]) if (!f.remote) { f.hp = 100; f.guard = GUARD.max; if (f.emote) f.emote = null; }
+  addFeed(null, 'Duel: ' + a.name + ' vs ' + b.name, '');
+  if (player === a || player === b || distH(player, a) < 26) showBanner('Duel', a.name + ' vs ' + b.name);
+  ring(tB.set(DUEL.x, 0, DUEL.z), '#ff5a4a', DUEL.r * 1.3, 0.45, 0.3);
+}
+function endDuel(w) {
+  DUEL.on = false; DUEL.a = DUEL.b = null; DUEL.cool = 3; DUEL.wall.visible = false; DUEL.watch = false; ringMat.color.set('#ffffff');
+  if (!w) addFeed(null, 'The duel ended in a draw', '');
+  if (w) {
+    addFeed(w.name, 'the duel', 'won');
+    if (player === w || distH(player, w) < 26) showBanner('Duel won', w.name);
+    if (!w.remote) { w.hp = Math.min(100, w.hp + 35); if (w.ai && Math.random() < 0.6) setTimeout(() => playEmote(w, 'cheer'), 600); }
+    emit('stars', center(w, tA), { n: 20, speed: 6 });
+  }
+}
+// runs every simulation step (after movement): who is in, who won, and the fence for our own fighters
+function updateDuel(dt) {
+  if (DUEL.on) {
+    const out = (f) => !fighters.includes(f) || f.dead;
+    if (out(DUEL.a) || out(DUEL.b)) return endDuel(out(DUEL.a) && out(DUEL.b) ? null : out(DUEL.a) ? DUEL.b : DUEL.a);
+    DUEL.t += dt;
+    if (DUEL.t >= DUEL.max) return endDuel(DUEL.a.hp === DUEL.b.hp ? null : DUEL.a.hp > DUEL.b.hp ? DUEL.a : DUEL.b);
+    for (const f of fighters) {
+      if (f.remote || f.lantern || f.dead) continue;
+      const dx = f.pos.x - DUEL.x, dz = f.pos.z - DUEL.z, d = Math.hypot(dx, dz) || 1e-4;
+      const mine = f === DUEL.a || f === DUEL.b;
+      if (mine && d > DUEL.r - 0.45) { const k = (DUEL.r - 0.45) / d; f.pos.x = DUEL.x + dx * k; f.pos.z = DUEL.z + dz * k; }
+      else if (!mine && d < DUEL.r + 0.5) { const k = (DUEL.r + 0.5) / d; f.pos.x = DUEL.x + dx * k; f.pos.z = DUEL.z + dz * k; }
+    }
+    return;
+  }
+  if (DUEL.cool > 0) { DUEL.cool -= dt; return; }
+  let a = null, b = null, n = 0;
+  for (const f of fighters) if (!f.dead && !f.isDummy && !f.lantern && inRing(f)) { n++; if (!a) a = f; else if (!b) b = f; }
+  DUEL.crowd = n;
+  if (n === 2) startDuel(a, b);
+}
+function updateDuelHud(fdt) {
+  if (DUEL.on) wallMat.opacity = 0.055 + Math.sin(realClock * 4) * 0.025;
+  const watching = DUEL.watch && DUEL.on;
+  const left = DUEL.on ? Math.max(0, Math.ceil(DUEL.max - DUEL.t)) : 0;
+  const key = DUEL.on ? 'on' + (watching ? 'w' : '') + duelSide(player) + left + DUEL.a.name + DUEL.b.name : DUEL.crowd > 2 && inRing(player) ? 'crowd' : '';
+  if (key === duelChip.key) return;
+  duelChip.key = key;
+  duelChip.el.hidden = !key;
+  if (!key) return;
+  duelChip.txt.textContent = key === 'crowd' ? 'Duel ring: 2 fighters only' : left + 's · ' + DUEL.a.name + ' vs ' + DUEL.b.name;
+  $('#duelWatch').hidden = key === 'crowd' || duelSide(player) === 1;
+  $('#duelWatch').textContent = watching ? 'Stop watching' : 'Watch';
+}
+$('#duelWatch').addEventListener('click', (e) => { e.currentTarget.blur(); DUEL.watch = !DUEL.watch && DUEL.on; duelChip.key = ''; });
+// spectator camera: over the shoulder of the first duelist, framing both
+const _dc = new V3(), _dm = new V3();
+function duelCamera(fdt) {
+  if (!DUEL.watch || !DUEL.on || fpv) return false;
+  if (held.up || held.down || held.left || held.right || TOUCH.fw || TOUCH.st || PAD.fw || PAD.st) { DUEL.watch = false; duelChip.key = ''; return false; }
+  const A = DUEL.a.root.position, Bp = DUEL.b.root.position;
+  _dm.addVectors(A, Bp).multiplyScalar(0.5); _dm.y += 1.2;
+  let dx = Bp.x - A.x, dz = Bp.z - A.z; const d = Math.hypot(dx, dz) || 1; dx /= d; dz /= d;
+  _dc.set(A.x - dx * 6 - dz * 2, A.y + 3.3, A.z - dz * 6 + dx * 2);
+  camera.position.lerp(_dc, 1 - Math.exp(-fdt * 5));
+  camera.lookAt(_dm);
+  return true;
 }
 
 // =====================================================================
@@ -4199,6 +4308,7 @@ function buildHelp() {
     ['k', kb('lock'), 'Lock on · press again for the next target'],
     ['k', kb('shift') + ' · ' + kb('fpv'), 'Shift-lock · first-person view'],
     ['k', kb('emote'), 'Emote wheel: hold, aim, let go (or tap, then click)'],
+    ['k', '1v1 ring', 'Two fighters inside start a duel · Watch it from the chip up top'],
     ['k', 'Esc', 'Free the mouse (click the arena to lock it again)'],
     ['k', 'Controller', 'RT M1 · LT block · A jump · B dash · X Y RB LB moves · ↑ awaken · ↓ grab · ← emotes · → lock'],
     ['t', 'Left stick', 'Move · drag right side to turn, pinch to zoom'],
@@ -4377,7 +4487,8 @@ function switchCharacter(key) {
 const FPV = { eye: 1.72, fov: 80 };
 function updateCamera(fdt) {
   const p = player, rp = p.root.position;
-  if (fpv) {
+  if (duelCamera(fdt)) { /* watching a duel */ }
+  else if (fpv) {
     // eye level (follows the body when knocked down), nudged forward so the face never clips the view
     const eye = p.ragdoll > 0 || p.dead || p.flatten > 0 ? Math.max(0.5, p.V.y + 0.2) : FPV.eye * (p.def.eyeK || 1);
     const cp = Math.cos(camPitch), sp = Math.sin(camPitch), fx = Math.sin(camYaw), fz = Math.cos(camYaw);
@@ -4418,6 +4529,7 @@ function simStep(dt) {
   audioAt(null);
   updateProjs(dt); updateTraps(dt); updateCans(dt); updateBlocks(dt);
   updateLantern(dt);
+  updateDuel(dt);
   if (online()) recordHistory();
   NET.cap = false;
 }
@@ -4439,7 +4551,7 @@ function frame(t) {
     updateParts(fdt); updateRings(fdt); updateTemps(fdt); updateDebris(fdt); updateAuras();
     if (cloudMesh) cloudMesh.rotation.y += fdt * 0.004;
     updateLock(fdt); animateLantern(fdt);
-    updateCamera(fdt); updateSpeedLines(fdt); updateHUD(fdt); updateEventChip(); updateNums(fdt); updateTags();
+    updateCamera(fdt); updateSpeedLines(fdt); updateHUD(fdt); updateEventChip(); updateDuelHud(fdt); updateNums(fdt); updateTags();
     netTick(fdt);
     RIG_U.uTime.value = realClock % 1000;
     renderer.render(scene, camera);
@@ -4525,7 +4637,7 @@ $('#emoteBtn').addEventListener('click', (e) => { e.currentTarget.blur(); if (EW
 // left emotes, right lock-on, R3 shift-lock, View help, Menu settings. Rumble on big hits.
 const PAD = { fw: 0, st: 0, jump: false, block: false, idx: -1, prev: new Uint8Array(18), wheel: false };
 const PAD_PRESS = { 0: 'jump', 1: 'dash', 2: 'abil0', 3: 'abil1', 5: 'abil2', 4: 'abil3', 7: 'm1', 12: 'ult', 13: 'grab' };
-addEventListener('gamepadconnected', (e) => { PAD.idx = e.gamepad.index; addFeed(null, 'Controller connected'); });
+addEventListener('gamepadconnected', (e) => { PAD.idx = e.gamepad.index; addFeed(null, 'Controller connected', ''); });
 addEventListener('gamepaddisconnected', (e) => { if (PAD.idx === e.gamepad.index) { PAD.idx = -1; PAD.fw = PAD.st = 0; PAD.jump = PAD.block = false; } });
 const dz = (v) => (Math.abs(v) < 0.18 ? 0 : (v - Math.sign(v) * 0.18) / 0.82);
 function pollPad(dt) {
@@ -4564,6 +4676,7 @@ function rumble(weak, strong, ms) {
 // boot: drop straight into the live arena as 阿娟
 // =====================================================================
 buildMap();
+buildDuelRing();
 for (const [x, z] of [[-26, -12], [-26, 12], [26, -12], [26, 12], [-12, -26], [12, -26], [-12, 26], [12, 26], [-18, 0], [18, 0]]) addCan(x, z);
 player = new Fighter('lion', { name: 'Player_' + ((Math.random() * 9000 + 1000) | 0), localKey: 'P', noTag: true });
 player.pos.set(0, 0, -14); player.yaw = 0; player.snap();
