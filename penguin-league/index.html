@@ -386,6 +386,21 @@ body.touch #hud-left{bottom:calc(192px + env(safe-area-inset-bottom,0px))}
   .pop,.toast,.feed-item,.confirm,.pill.bump{animation-duration:.01s}
   .btn,.opt,.chip,.item{transition:none}
 }
+
+/* Play with friends: lobby */
+.friends-btn{margin-top:10px;font-size:20px;padding:10px 26px}
+.net-input{font:600 18px var(--font-body);color:var(--ink);background:#fff;border:3px solid var(--ink);border-radius:12px;padding:8px 12px;min-width:0;width:min(320px,100%)}
+.net-input.code{width:9ch;text-transform:uppercase;letter-spacing:.2em;font-family:var(--font-display);font-size:22px}
+.net-input.link{flex:1;width:auto;font-size:14px}
+.net-join{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.net-code{font:400 clamp(40px,9vmin,64px)/1 var(--font-display);letter-spacing:.18em;color:var(--sun);text-shadow:var(--stroke);margin:4px 0 12px}
+.net-status{background:#fff;border:3px solid var(--ink);border-radius:12px;padding:8px 12px;font-weight:600;margin:0 0 12px}
+.net-teams{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px}
+.net-team{border:3px solid var(--ink);border-radius:14px;padding:8px 12px;background:#fff}
+.net-team.t0{box-shadow:inset 0 6px 0 var(--blue)}.net-team.t1{box-shadow:inset 0 6px 0 var(--orange)}
+.net-team h4{margin:6px 0;font-family:var(--font-display);font-weight:400;font-size:18px}
+.net-p{font-weight:600;font-size:17px;padding:3px 0}.net-p.me{color:var(--blue-deep)}.net-p.bot{color:var(--muted);font-size:14px;font-weight:500}
+.net-p .tag{font-size:12px;padding:1px 6px;border-radius:6px;background:var(--sun);color:var(--ink)}.net-p .tag.you{background:var(--lime)}
 </style>
 
 <svg class="svg-defs" aria-hidden="true" focusable="false"><defs>
@@ -448,6 +463,7 @@ body.touch #hud-left{bottom:calc(192px + env(safe-area-inset-bottom,0px))}
     <div id="menu-bg"><div class="snow s1"></div><div class="snow s2"></div></div>
     <section class="screen" id="scr-title" hidden></section>
     <section class="screen" id="scr-play" hidden></section>
+    <section class="screen" id="scr-online" hidden></section>
     <section class="screen see-through" id="scr-garage" hidden></section>
     <section class="screen see-through" id="scr-locker" hidden></section>
     <section class="screen" id="scr-howto" hidden></section>
@@ -462,6 +478,8 @@ body.touch #hud-left{bottom:calc(192px + env(safe-area-inset-bottom,0px))}
   </div>
 </div>
 
+<!-- PeerJS: browser-to-browser connections for online matches with friends (rooms + invite links) -->
+<script defer src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
 <script type="module">
 // =====================================================================
 //  PENGUIN LEAGUE — core: utilities, game data, save file, audio
@@ -556,6 +574,7 @@ const DEFAULT_SAVE = {
   },
   career: { played: 0, wins: 0, goals: 0, godWins: 0 },
   last: { mode: '1v1', opp: 'normal', mate: 'normal', len: 300, fair: false },
+  netName: '',   // name shown to friends online ('' = the shared account's username)
 };
 function deepMerge(base, src) {
   for (const k in src) {
@@ -6062,7 +6081,7 @@ function coachUpdate(M) {
 // =====================================================================
 const M = {
   cars: [], views: [], ball: new Ball(), pads: [], score: [0, 0], clock: 300, t: 0, state: 'idle', stateT: 0,
-  demo: false, mode: '1v1', cfg: null, player: null, kickoff: false, kickStart: 0, kickTaker: [null, null], coach: [null, null],
+  demo: false, online: false, mode: '1v1', cfg: null, player: null, kickoff: false, kickStart: 0, kickTaker: [null, null], coach: [null, null],
   preds: {}, hist: [], histI: 0, overtime: false, otTime: 0, clockRun: false, ballHidden: false, touchSerial: 0, lastTouch: null,
   touches: [], tick: 0, slowmo: 0, zeroWait: false, teamLevel: ['normal', 'normal'], paused: false, excite: 0, levels: [], lastCount: 0, dutyT: [-99, -99],
   respawn(c) {
@@ -6075,14 +6094,10 @@ const M = {
     if (v.demolished || M.state !== 'play') return;
     v.demolished = true; v.respawnT = 3; v.boost = 0;
     a.stat.demos++; addScore(a, 25, 'DEMOLITION');
-    puffBurst(v.p, 22, 0x2b3050, 9, 0.7); puffBurst(v.p, 14, 0xffffff, 7, 0.6);
-    FX.confetti(v.p, 40, [0x2b3050, 0xffffff, 0xffa41b], 12);
-    FX.burst('POOF!', _gv.copy(v.p).add(UP), 4.2, '#ffffff', TEAM_CSS[a.team]);
-    if (!M.demo) feed(`${tn(a)} demolished ${tn(v)}`);
-    if (nearPlayer(v.p, 40)) { Sfx.demo(); CAM.shake = Math.max(CAM.shake, v === M.player || a === M.player ? 0.9 : 0.4); }
-    if (v === M.player) banner('DEMOLISHED', 'Respawning…', 'pink', 1.6);
+    demoFx(v, a); netEvent('demo', ci(v), ci(a));
   },
   onPickup(c, p) {
+    netEvent('pick', M.pads.indexOf(p), ci(c));
     if (!p.big) { if (c === M.player) Sfx.pickup(false); puffBurst(_gv.set(p.x, 0.5, p.z), 4, 0xffe066, 3, 0.25); return; }
     // ice crystal: shatter into icy glints + a frost ring; the speed burst itself is physics
     if (c === M.player) { Sfx.crystal(); CAM.shake = Math.max(CAM.shake, 0.25); }
@@ -6096,11 +6111,43 @@ for (let i = 0; i < 90; i++) M.hist.push({ p: new V3(), v: new V3(), w: new V3()
 const _gv = new V3(), _preP = new V3(), _preV = new V3(), _preW = new V3();
 const tn = (c) => `<span class="${c.team ? 'o' : 'b'}">${esc(c.name)}</span>`;
 const nearPlayer = (p, d) => !M.player || M.player.p.distanceTo(p) < d;
+// online: a car's index in M.cars (the same on every computer), and an event for the friends' screens
+const ci = (c) => M.cars.indexOf(c);
+function netEvent(...e) { if (M.online && Online.role === 'host') Online.ev.push(e); }
 
 function addScore(c, pts, label) {
   if (M.demo) return;
   c.stat.score += pts;
   if (c === M.player) toast(`+${pts}`, label);
+  else if (c.remote) netEvent('score', ci(c), pts, label);
+}
+// ---- what everyone sees when something happens (the host runs these after the game logic; friends run them
+// from the host's events, so each screen gets its own "You scored!" / "DEMOLISHED" and effects)
+function demoFx(v, a) {
+  puffBurst(v.p, 22, 0x2b3050, 9, 0.7); puffBurst(v.p, 14, 0xffffff, 7, 0.6);
+  FX.confetti(v.p, 40, [0x2b3050, 0xffffff, 0xffa41b], 12);
+  FX.burst('POOF!', _gv.copy(v.p).add(UP), 4.2, '#ffffff', TEAM_CSS[a.team]);
+  if (!M.demo) feed(`${tn(a)} demolished ${tn(v)}`);
+  if (nearPlayer(v.p, 40)) { Sfx.demo(); CAM.shake = Math.max(CAM.shake, v === M.player || a === M.player ? 0.9 : 0.4); }
+  if (v === M.player) banner('DEMOLISHED', 'Respawning…', 'pink', 1.6);
+}
+function saveFx(c, at) {
+  feed(`${tn(c)} made a save`); FX.burst('SAVE!', _gv.copy(at).add(UP), 3.6, '#72dc4e', '#ffffff');
+}
+function touchFx(c, power, charged, curved, point) {
+  if (power > 2.5 && nearPlayer(point, 50)) Sfx.hit(power);
+  if (charged > 0) {
+    // charged shot: frost ring + a POWER! or CURVE! sticker (curve when the shooter was steering at contact)
+    FX.shock(_gv.copy(point), 0x5fdcff, 5 + charged * 5);
+    FX.burst(curved ? 'CURVE!' : 'POWER!', _gv.copy(point).addScaledVector(UP, 1.1), 2.6 + charged * 1.2, '#c8f6ff', curved ? '#8d5bff' : '#2fb8ff');
+    puffBurst(point, 8, 0xc8f6ff, 6, 0.32);
+    if (nearPlayer(point, 50)) Sfx.power(charged);
+    if (c === M.player) CAM.shake = Math.max(CAM.shake, 0.5);
+  } else if (power > 17) {
+    FX.burst(pick(['POW!', 'BONK!', 'WHAM!', 'SMACK!']), _gv.copy(point).addScaledVector(UP, 0.8), 2.4 + power * 0.04);
+    puffBurst(point, 6, 0xffffff, 5, 0.3);
+    if (c === M.player) CAM.shake = Math.max(CAM.shake, 0.35);
+  }
 }
 
 // ----------------------------------------------------------- match setup
@@ -6111,12 +6158,12 @@ function clearMatch() {
 }
 function startMatch(cfg) {
   clearMatch();
-  M.cfg = cfg; M.demo = !!cfg.demo; M.mode = cfg.mode;
+  M.cfg = cfg; M.demo = !!cfg.demo; M.mode = cfg.mode; M.online = !!cfg.online;
   const kind = cfg.mode === '5v5' ? 'large' : 'standard';
   const rebuild = A.kind !== kind || !arenaGroup;
   setArena(kind);
   M.pads = makePads();
-  if (rebuild) buildArena(); else { for (const pv of padViews) scene.remove(pv.g); padViews = M.pads.map(makePadView); }
+  if (rebuild) buildArena(); else padViews = M.pads.map(makePadView);
   const n = MODES[cfg.mode].n;
   const names = shuffle(BOT_NAMES);
   let ni = 0;
@@ -6125,7 +6172,23 @@ function startMatch(cfg) {
     return { hat: pick(hatPool), skin: pick(SKINS).id, trail: 'puff' };
   };
   M.teamLevel = [cfg.mate, cfg.opp];
-  for (const team of [0, 1]) {
+  if (cfg.roster) {
+    // online: every computer builds the same penguins in the same order from the host's list. Everyone drives a
+    // stock penguin; friends' penguins follow the controls they send, and only the host runs the bots
+    for (const s of cfg.roster) {
+      let car;
+      if (s.human) {
+        car = new Penguin(s.team, s.name, { ...STOCK }, { cos: s.cos });
+        if (s.id === cfg.me) M.player = car; else car.remote = s.id;
+      } else {
+        car = new Penguin(s.team, s.name, { ...STOCK }, { bot: true, level: s.level, cos: s.cos });
+        if (!cfg.guest) car.bot = new Bot(car, s.level);
+      }
+      M.cars.push(car);
+      M.views.push(new PenguinView(car));
+    }
+  }
+  else for (const team of [0, 1]) {
     for (let i = 0; i < n; i++) {
       let car;
       if (team === 0 && i === 0 && !M.demo) {
@@ -6216,8 +6279,9 @@ function simTick() {
   if (M.tick % 3 === 0) updatePreds();
   if (M.tick % 12 === 0) coachUpdate(M);
   if (M.kickoff && M.t - M.kickStart > 4.5) M.kickoff = false;
-  // controls
+  // controls (online: friends' penguins use the controls they sent)
   if (M.player) readPlayerInput(M.player);
+  if (M.online) Online.applyInputs();
   for (const c of M.cars) if (c.bot) c.bot.update(DT, M);
   for (const c of M.cars) { stepPenguin(c, DT, M); handleCarEvents(c); }
   // ball
@@ -6264,10 +6328,14 @@ function simTick() {
 function handleCarEvents(c) {
   if (!c.events.length) return;
   for (const e of c.events) {
-    if (c === M.player) { if (e === 'jump') Sfx.jump(); else if (e === 'flip') Sfx.flip(); }
-    if (e === 'flip' && nearPlayer(c.p, 30)) puffBurst(c.p, 4, 0xffffff, 2.5, 0.35);
+    carEventFx(c, e);
+    if (c.remote) netEvent('ce', ci(c), e === 'flip' ? 1 : 0);
   }
   c.events.length = 0;
+}
+function carEventFx(c, e) {
+  if (c === M.player) { if (e === 'jump') Sfx.jump(); else if (e === 'flip') Sfx.flip(); }
+  if (e === 'flip' && nearPlayer(c.p, 30)) puffBurst(c.p, 4, 0xffffff, 2.5, 0.35);
 }
 function onTouch(c, hit) {
   const M_ = M;
@@ -6280,25 +6348,14 @@ function onTouch(c, hit) {
       const own = c.team === 0 ? -1 : 1;
       const before = predictGoal(_preP, _preV, 2.6, _preW);
       const after = predictGoal(M_.ball.p, M_.ball.v, 4, M_.ball.w);
-      if (before === own && after !== own) { c.stat.saves++; addScore(c, 50, 'SAVE'); feed(`${tn(c)} made a save`); FX.burst('SAVE!', _gv.copy(M_.ball.p).add(UP), 3.6, '#72dc4e', '#ffffff'); }
+      if (before === own && after !== own) { c.stat.saves++; addScore(c, 50, 'SAVE'); saveFx(c, M_.ball.p); netEvent('save', ci(c)); }
       else if (after === -own && before !== -own) { c.stat.shots++; addScore(c, 20, 'SHOT ON GOAL'); }
     }
   }
   c.lastTouchT = M_.t;
-  if (hit.power > 2.5 && nearPlayer(hit.point, 50)) Sfx.hit(hit.power);
-  if (hit.charged > 0) {
-    // charged shot: frost ring + a POWER! or CURVE! sticker (curve when the shooter was steering at contact)
-    const curved = Math.abs(c.ctrl.steer) > 0.3;
-    FX.shock(_gv.copy(hit.point), 0x5fdcff, 5 + hit.charged * 5);
-    FX.burst(curved ? 'CURVE!' : 'POWER!', _gv.copy(hit.point).addScaledVector(UP, 1.1), 2.6 + hit.charged * 1.2, '#c8f6ff', curved ? '#8d5bff' : '#2fb8ff');
-    puffBurst(hit.point, 8, 0xc8f6ff, 6, 0.32);
-    if (nearPlayer(hit.point, 50)) Sfx.power(hit.charged);
-    if (c === M_.player) CAM.shake = Math.max(CAM.shake, 0.5);
-  } else if (hit.power > 17) {
-    FX.burst(pick(['POW!', 'BONK!', 'WHAM!', 'SMACK!']), _gv.copy(hit.point).addScaledVector(UP, 0.8), 2.4 + hit.power * 0.04);
-    puffBurst(hit.point, 6, 0xffffff, 5, 0.3);
-    if (c === M_.player) CAM.shake = Math.max(CAM.shake, 0.35);
-  }
+  const curved = Math.abs(c.ctrl.steer) > 0.3;
+  touchFx(c, hit.power, hit.charged, curved, hit.point);
+  if (hit.power > 2.5 || hit.charged > 0) netEvent('touch', ci(c), +hit.power.toFixed(2), +hit.charged.toFixed(2), curved ? 1 : 0, +hit.point.x.toFixed(2), +hit.point.y.toFixed(2), +hit.point.z.toFixed(2));
 }
 function onGoal(team) {
   const b = M.ball;
@@ -6313,11 +6370,6 @@ function onGoal(team) {
   }
   if (scorer && !M.demo) { scorer.stat.goals++; addScore(scorer, 100, 'GOAL'); }
   if (assist && !M.demo) { assist.stat.assists++; addScore(assist, 50, 'ASSIST'); }
-  const col = TEAM_HEX[team];
-  FX.confetti(b.p, 260, [col, 0xffd23f, 0xff5fa8, 0xffffff, 0x72dc4e, 0x8d5bff], 22);
-  FX.shock(b.p, col, 16); FX.shock(_gv.copy(b.p).add(UP), 0xffffff, 10);
-  puffBurst(b.p, 30, 0xffffff, 12, 1.0); puffBurst(b.p, 20, col, 10, 0.9);
-  FX.burst('GOAL!', _gv.copy(b.p).addScaledVector(UP, 3), 9, team ? '#ffb15c' : '#7fd0ff', '#ffd23f');
   for (const c of M.cars) {
     if (c.demolished) continue;
     const d = c.p.distanceTo(b.p);
@@ -6325,13 +6377,23 @@ function onGoal(team) {
   }
   M.state = 'goal'; M.excite = 1;
   if (M.demo) { M.ballHidden = true; M.stateT = 1.5; }
-  else {
+  else M.stateT = save.settings.reducedMotion ? 1.6 : GOAL_HL.dur * GOAL_TS + 0.45;
+  goalFx(team, scorer, assist);
+  netEvent('goal', team, scorer ? ci(scorer) : -1, assist ? ci(assist) : -1);
+}
+function goalFx(team, scorer, assist) {
+  const b = M.ball;
+  const col = TEAM_HEX[team];
+  FX.confetti(b.p, 260, [col, 0xffd23f, 0xff5fa8, 0xffffff, 0x72dc4e, 0x8d5bff], 22);
+  FX.shock(b.p, col, 16); FX.shock(_gv.copy(b.p).add(UP), 0xffffff, 10);
+  puffBurst(b.p, 30, 0xffffff, 12, 1.0); puffBurst(b.p, 20, col, 10, 0.9);
+  FX.burst('GOAL!', _gv.copy(b.p).addScaledVector(UP, 3), 9, team ? '#ffb15c' : '#7fd0ff', '#ffd23f');
+  M.excite = 1;
+  if (!M.demo) {
     // slow-motion highlight: GOAL_HL.dur real seconds at GOAL_TS speed with the ball still rippling the net
     // while the camera zooms toward it and the scorer, then a short beat and the kickoff reset
     // Reduced motion: no slow motion, no camera swoop, no shake and no white flash, just a short pause
-    if (save.settings.reducedMotion) M.stateT = 1.6;
-    else {
-      M.stateT = GOAL_HL.dur * GOAL_TS + 0.45;
+    if (!save.settings.reducedMotion) {
       M.slowmo = GOAL_HL.dur; CAM.shake = 1; flash();
       startHighlight(team, scorer); cine(true);
     }
@@ -6345,14 +6407,21 @@ function onGoal(team) {
 function startOvertime() {
   M.overtime = true; M.otTime = 0;
   M.state = 'otintro'; M.stateT = 2.4;
-  banner('OVERTIME', 'Next goal wins', 'pink', 2.2); Sfx.whistle();
+  otFx(); netEvent('ot');
 }
+function otFx() { banner('OVERTIME', 'Next goal wins', 'pink', 2.2); Sfx.whistle(); }
 function endMatch() {
-  endHighlight();
   M.state = 'over'; M.ballHidden = M.ballHidden || false;
+  if (M.online) Online.sendStats();
+  endFx(); netEvent('end');
+}
+// the player's own team decides victory (online friends can be on orange)
+const myWin = () => { const t = M.player ? M.player.team : 0; return M.score[t] > M.score[1 - t]; };
+function endFx() {
+  endHighlight();
   Sfx.whistle();
-  const win = M.score[0] > M.score[1];
-  banner(win ? 'VICTORY!' : 'DEFEAT', `${M.score[0]} – ${M.score[1]}`, win ? 'yellow' : 'pink', 2.4);
+  const win = myWin(), t = M.player ? M.player.team : 0;
+  banner(win ? 'VICTORY!' : M.score[0] === M.score[1] ? 'DRAW' : 'DEFEAT', `${M.score[t]} – ${M.score[1 - t]}`, win ? 'yellow' : 'pink', 2.4);
   if (win) FX.confetti(_gv.set(M.player.p.x, 3, M.player.p.z), 200, [0xffd23f, 0xff5fa8, 0x2f8cff, 0xffffff], 16);
   setTimeout(() => UI.results(), 2300);
 }
@@ -6370,7 +6439,8 @@ const LATCH = { jump: { n: 0, out: false }, boost: { n: 0, out: false }, slide: 
 const KEY_ACTION = { Space: 'jump', ShiftLeft: 'boost', ShiftRight: 'boost', KeyX: 'slide', KeyF: 'charge' };
 const PAD_ACTION = { 0: 'jump', 1: 'boost', 2: 'slide', 5: 'charge' };   // A, B, X, RB
 const playing = () => inMatch() && !M.paused;
-function latchPress(a) { if (playing()) LATCH[a].n++; }
+const PRESSES = { jump: 0, boost: 0, slide: 0, charge: 0 };   // every press ever (online friends send this count)
+function latchPress(a) { if (playing()) { LATCH[a].n++; PRESSES[a]++; } }
 function clearInput() {
   KEYS.clear(); mouse.l = mouse.r = false;
   for (const a of ACTIONS) { LATCH[a].n = 0; LATCH[a].out = false; }
@@ -6399,7 +6469,7 @@ addEventListener('keydown', (e) => {
 });
 addEventListener('keyup', (e) => { KEYS.delete(e.code); if (e.code === 'Tab') HUD.scoreboard(false); });
 // switching to another window or tab pauses a match (and drops any held keys)
-function autoPause() { if (inMatch() && !M.paused && M.state !== 'over') UI.togglePause(); }
+function autoPause() { if (inMatch() && !M.online && !M.paused && M.state !== 'over') UI.togglePause(); }   // an online match can't pause for everyone
 addEventListener('blur', () => { clearInput(); autoPause(); });
 document.addEventListener('visibilitychange', () => { if (document.hidden) { clearInput(); autoPause(); } });
 canvas.addEventListener('mousedown', (e) => {
@@ -6432,7 +6502,13 @@ function pollPad() {
 const padOn = (i) => PAD.prev[i] === 1;
 const dz = (v) => (Math.abs(v) < 0.15 ? 0 : (v - Math.sign(v) * 0.15) / 0.85);
 function readPlayerInput(c) {
-  const k = c.ctrl, K = (code) => KEYS.has(code);
+  const k = c.ctrl;
+  gatherInput(k);
+  k.jump = latched('jump', k.jump); k.boost = latched('boost', k.boost); k.slide = latched('slide', k.slide); k.charge = latched('charge', k.charge);
+}
+// the held state of every control right now (no latching)
+function gatherInput(k) {
+  const K = (code) => KEYS.has(code);
   let thr = (K('KeyW') || K('ArrowUp') ? 1 : 0) - (K('KeyS') || K('ArrowDown') ? 1 : 0);
   let st = (K('KeyD') || K('ArrowRight') ? 1 : 0) - (K('KeyA') || K('ArrowLeft') ? 1 : 0);
   const roll = 0;   // rolling is not possible
@@ -6446,7 +6522,7 @@ function readPlayerInput(c) {
   if (touch.jx || touch.jy) { st += touch.jx; thr += clamp(-touch.jy * 1.5, -1, 1); pitch += -touch.jy; }
   jump = jump || touch.jump; boost = boost || touch.boost; slide = slide || touch.slide; charge = charge || touch.charge;
   k.throttle = clamp(thr, -1, 1); k.steer = clamp(st, -1, 1); k.pitch = clamp(pitch, -1, 1); k.roll = clamp(roll, -1, 1);
-  k.jump = latched('jump', jump); k.boost = latched('boost', boost); k.slide = latched('slide', slide); k.charge = latched('charge', charge);
+  k.jump = jump; k.boost = boost; k.slide = slide; k.charge = charge;
 }
 function toggleBallCam() { save.settings.ballCam = !save.settings.ballCam; persist(); HUD.camChip(); }
 // touch controls
@@ -6592,15 +6668,19 @@ function frame(now) {
 function tick(dt) {
   if (UI.showroomOn()) { renderShowroom(dt); Sfx.loops(false, 0, 0); return; }
   const running = M.state !== 'idle' && !M.paused;
-  if (running) {
+  // online friends don't simulate: they draw the host's match from its updates (and send their controls)
+  const guest = M.online && Online.role === 'guest';
+  if (guest && running) Online.guestFrame(dt);
+  else if (running) {
     let ts = 1;
     if (M.slowmo > 0) { M.slowmo -= dt; ts = GOAL_TS; }
     acc += dt * ts;
     // catch up after a slow frame (up to MAX_CATCHUP ticks, ~0.25 s), then drop the rest instead of spiralling
     let n = 0; while (acc >= DT && n < MAX_CATCHUP) { simTick(); acc -= DT; n++; }
     if (n >= MAX_CATCHUP) acc = 0;
+    if (M.online) Online.hostFrame();
   }
-  const alpha = clamp(acc / DT, 0, 1);
+  const alpha = guest ? 1 : clamp(acc / DT, 0, 1);
   const fdt = running ? dt * (M.slowmo > 0 ? GOAL_TS : 1) : 0;
   for (const v of M.views) v.update(fdt, alpha, M.ball.p, !M.demo && v.car !== M.player);
   ballView.update(fdt, alpha, M.ball, M.ballHidden);
@@ -6615,6 +6695,430 @@ function tick(dt) {
   else Sfx.loops(false, 0, 0);
   renderMain();
 }
+// =====================================================================
+//  ONLINE — matches with friends: rooms, invite links, lobby, host-run matches
+// =====================================================================
+// Browsers connect straight to each other (WebRTC, through PeerJS). The host's computer runs the real match
+// exactly like an offline one. Friends send their controls every frame and get ~30 updates a second of where
+// every penguin and the ball are, which they draw NET_DELAY_MS behind so motion stays smooth. Goals,
+// demolitions, saves and big hits travel as events, so every screen shows its own banners and effects.
+const NET_PREFIX = 'penguin-league-room-';
+const NET_MAX_GUESTS = 3;            // 4 players in a room
+const NET_SNAP_MS = 1000 / 30;       // host -> friends update rate
+const NET_DELAY_MS = 100;            // friends draw this far behind the newest update (hides network jitter)
+const NET_STATS_MS = 1000;           // scoreboard numbers
+const NET_JOIN_TRIES = 8;            // an invite link keeps knocking for ~20 s while the host opens the room
+const NET_LETTERS = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
+
+const Online = (() => {
+  const st = {
+    role: null, peer: null, conns: new Map(), code: '', status: '', myId: null, timer: 0, maxTries: 1,
+    players: [], mode: '2v2', len: 180, bots: 'normal', together: false, inMatch: false, typed: '',
+  };
+  const ev = [];        // host: events since the last update
+  const snaps = [];     // friend: updates waiting to be drawn
+  let off = null, lastSnap = 0, lastStats = 0, prevState = '';
+  const _qa = new Q(), _qb = new Q(), _nv = new V3();
+  const sendIn = { t: 'in', th: 0, st: 0, pi: 0, j: 0, jn: 0, b: 0, s: 0, c: 0 };
+  const inCtrl = { throttle: 0, steer: 0, pitch: 0, roll: 0, jump: false, boost: false, slide: false, charge: false };
+
+  // ---------- names, codes, sanitising what friends send
+  function myName() {
+    if (save.netName) return save.netName;
+    try {
+      const p = JSON.parse(localStorage.getItem('spear_mace_user_profile') || 'null');   // the account shared with the other games
+      if (p && p.username) return cleanName(p.username);
+    } catch (e) { /* storage blocked */ }
+    return 'Penguin';
+  }
+  const cleanName = (s) => String(s || '').replace(/[\u0000-\u001f<>]/g, '').trim().slice(0, 16) || 'Penguin';
+  const cleanCode = (s) => String(s || '').toUpperCase().replace(/[^A-Z]/g, '').slice(0, 5);
+  function cleanCos(c) {
+    c = c || {};
+    return {
+      hat: HATS.some((h) => h.id === c.hat) ? c.hat : 'none',
+      skin: SKINS.some((h) => h.id === c.skin) ? c.skin : 'classic',
+      trail: TRAILS.some((h) => h.id === c.trail) ? c.trail : 'puff',
+    };
+  }
+  function makeCode() { let s = ''; for (let i = 0; i < 5; i++) s += NET_LETTERS[(Math.random() * NET_LETTERS.length) | 0]; return s; }
+  const inviteUrl = () => location.origin + location.pathname + '?room=' + st.code;
+  const rerender = () => { if (UI.cur === 'online') UI.show('online'); };
+
+  // ---------- connections
+  function send(m, to) { for (const [id, c] of st.conns) if (c.open && (!to || to === id)) { try { c.send(m); } catch (e) { /* closing */ } } }
+  function attach(conn) {
+    conn.on('open', () => {
+      st.conns.set(conn.peer, conn); clearTimeout(st.timer);
+      if (st.role === 'guest') { conn.send({ t: 'hello', name: myName(), cos: { ...save.equip } }); st.status = ''; rerender(); }
+    });
+    conn.on('data', (m) => onMsg(m, conn.peer));
+    conn.on('close', () => onClose(conn.peer));
+    conn.on('error', () => onClose(conn.peer));
+  }
+  function host() {
+    if (typeof window.Peer !== 'function') { st.status = "Online play couldn't load. Check your internet connection and refresh."; rerender(); return; }
+    leave(true);
+    st.role = 'host'; st.myId = 'host'; st.code = makeCode(); st.status = 'Opening your room…';
+    st.players = [{ id: 'host', name: myName(), cos: { ...save.equip } }];
+    const peer = st.peer = new window.Peer(NET_PREFIX + st.code);
+    peer.on('open', () => { if (st.peer === peer) { st.status = ''; rerender(); } });
+    peer.on('connection', (conn) => {
+      if (st.conns.size >= NET_MAX_GUESTS) { conn.on('open', () => { conn.send({ t: 'full' }); setTimeout(() => conn.close(), 300); }); return; }
+      attach(conn);
+    });
+    peer.on('error', (e) => {
+      if (st.peer !== peer) return;
+      if (e.type === 'unavailable-id') { host(); return; }   // that code is taken: pick another
+      st.status = 'Connection problem (' + e.type + '). Try again.'; rerender();
+    });
+    rerender();
+  }
+  function join(code, tries) {
+    code = cleanCode(code);
+    if (code.length !== 5) { st.status = 'Room codes are 5 letters.'; rerender(); return; }
+    if (typeof window.Peer !== 'function') { st.status = "Online play couldn't load. Check your internet connection and refresh."; rerender(); return; }
+    leave(true);
+    st.role = 'guest'; st.code = code; st.typed = code;
+    st.status = tries ? `Waiting for room ${code} to open…` : `Joining room ${code}…`;
+    const peer = st.peer = new window.Peer();
+    peer.on('open', (id) => {
+      if (st.peer !== peer) return;
+      st.myId = id;
+      attach(peer.connect(NET_PREFIX + code, { reliable: true, serialization: 'json' }));
+      st.timer = setTimeout(() => retryOrFail(code, tries, "Couldn't reach that room."), 10000);
+    });
+    peer.on('error', (e) => {
+      if (st.peer !== peer) return;
+      if (e.type === 'peer-unavailable') retryOrFail(code, tries, `No room called ${code} is open. Check the code with your friend.`);
+      else { st.status = 'Connection problem (' + e.type + '). Try again.'; rerender(); }
+    });
+    rerender();
+  }
+  function retryOrFail(code, tries, msg) {
+    if (st.role !== 'guest' || st.code !== code || st.conns.size) return;
+    if (tries + 1 < st.maxTries) {
+      st.status = `Waiting for room ${code} to open…`;
+      setTimeout(() => { if (st.role === 'guest' && st.code === code && !st.conns.size) join(code, tries + 1); }, 2500);
+    } else { leave(true); st.status = msg; }
+    rerender();
+  }
+  function leave(keepStatus) {
+    st.role = null;   // first, so the close handlers below know this was on purpose
+    clearTimeout(st.timer);
+    for (const c of st.conns.values()) { try { c.close(); } catch (e) { /* already closed */ } }
+    st.conns.clear();
+    if (st.peer) { try { st.peer.destroy(); } catch (e) { /* already gone */ } }
+    st.peer = null; st.players = []; st.inMatch = false; st.myId = null;
+    snaps.length = 0; ev.length = 0; off = null;
+    if (!keepStatus) st.status = '';
+  }
+  function onClose(id) {
+    if (!st.conns.has(id)) return;
+    st.conns.delete(id);
+    if (st.role === 'host') {
+      const p = st.players.find((x) => x.id === id);
+      st.players = st.players.filter((x) => x.id !== id);
+      const car = M.online && M.cars.find((c) => c.remote === id);
+      if (car) {
+        // a friend left mid-match: a bot takes over their penguin
+        car.remote = null; car.isBot = true; car.level = st.bots; car.bot = new Bot(car, st.bots);
+        feed(`${tn(car)} left · a bot took over`);
+      } else if (p) toast('', `${p.name} left`);
+      lobbyOut(); rerender();
+    } else if (st.role === 'guest') {
+      const wasPlaying = M.online && M.state !== 'over';
+      leave(true); st.status = 'The host closed the room.';
+      if (wasPlaying) { banner('HOST LEFT', 'The match is over', 'pink', 2.2); setTimeout(() => { $('#hud').hidden = true; startDemo(); UI.show('online'); }, 2200); }
+      else rerender();
+    }
+  }
+
+  // ---------- messages
+  function onMsg(m, from) {
+    if (!m || typeof m !== 'object') return;
+    if (st.role === 'host') {
+      if (m.t === 'hello') {
+        const p = { id: from, name: cleanName(m.name), cos: cleanCos(m.cos) };
+        const i = st.players.findIndex((x) => x.id === from);
+        if (i >= 0) st.players[i] = p; else st.players.push(p);
+        if (i < 0) toast('', `${p.name} joined`);
+        lobbyOut(); rerender();
+      } else if (m.t === 'in') {
+        const car = M.online && M.cars.find((c) => c.remote === from);
+        if (!car) return;
+        if (!car.net) { car.netJn = m.jn | 0; car.netJq = 0; car.netJout = false; }   // presses from before the match don't count
+        car.net = m;
+      }
+      return;
+    }
+    if (st.role !== 'guest') return;
+    if (m.t === 's') {
+      const now = performance.now(), est = now - m.ts;
+      // clock offset to the host (+ the trip): the fastest message wins, drifting slowly so a changed route adapts
+      off = off === null || est < off ? est : off + (est - off) * 0.002;
+      snaps.push({ ts: m.ts, m, fired: false });
+      // a stalled tab (hidden, slow frame) still gets its goals and demolitions, just late
+      if (snaps.length > 40) { const old = snaps.shift(); if (!old.fired) { old.fired = true; fire(old.m.ev); } }
+    } else if (m.t === 'lobby') {
+      st.players = Array.isArray(m.players) ? m.players.map((p) => ({ id: p.id, name: cleanName(p.name), team: p.team })) : [];
+      st.mode = MODES[m.mode] ? m.mode : '2v2'; st.len = m.len; st.bots = LEVELS[m.bots] ? m.bots : 'normal'; st.together = !!m.together; st.inMatch = !!m.inMatch;
+      rerender();
+    } else if (m.t === 'start') begin(m.cfg);
+    else if (m.t === 'stats') applyStats(m.s);
+    else if (m.t === 'back') backToLobby();
+    else if (m.t === 'full') { leave(true); st.status = 'That room is full (4 players at most).'; rerender(); }
+  }
+  // who plays on which team: friends alternate blue / orange, or all on blue in "together" mode
+  function teamsFor(players) { return players.map((p, i) => (st.together ? 0 : i % 2)); }
+  function fits() {
+    const n = MODES[st.mode].n, t = teamsFor(st.players);
+    return [0, 1].every((k) => t.filter((x) => x === k).length <= n);
+  }
+  function lobbyOut() {
+    if (st.role !== 'host') return;
+    const t = teamsFor(st.players);
+    send({ t: 'lobby', players: st.players.map((p, i) => ({ id: p.id, name: p.name, team: t[i] })), mode: st.mode, len: st.len, bots: st.bots, together: st.together, inMatch: st.inMatch });
+  }
+
+  // ---------- starting a match
+  function start() {
+    if (st.role !== 'host' || st.players.length < 2 || !fits()) return;
+    const n = MODES[st.mode].n, t = teamsFor(st.players), names = shuffle(BOT_NAMES);
+    const roster = [];
+    let ni = 0;
+    for (const team of [0, 1]) {
+      const humans = st.players.filter((p, i) => t[i] === team);
+      for (let i = 0; i < n; i++) {
+        const h = humans[i];
+        if (h) roster.push({ human: true, id: h.id, name: h.name, cos: h.cos, team });
+        else roster.push({ human: false, name: names[ni++ % names.length], level: st.bots, team, cos: { hat: pick(['none', 'beanie', 'tophat', 'propeller', 'party']), skin: pick(SKINS).id, trail: 'puff' } });
+      }
+    }
+    const cfg = { mode: st.mode, opp: st.bots, mate: st.bots, len: st.len, fair: true, online: true, roster };
+    send({ t: 'start', cfg });
+    begin(cfg);
+  }
+  function begin(cfg) {
+    if (!cfg || !Array.isArray(cfg.roster) || !MODES[cfg.mode]) return;
+    st.inMatch = true; snaps.length = 0; ev.length = 0; off = null; prevState = ''; lastSnap = lastStats = 0;
+    for (const s of cfg.roster) { s.name = cleanName(s.name); s.cos = cleanCos(s.cos); s.team = s.team ? 1 : 0; if (!s.human) s.level = LEVELS[s.level] ? s.level : 'normal'; }
+    UI.show(null);
+    startMatch({ ...cfg, me: st.myId, guest: st.role === 'guest' });
+    $('#hud').hidden = false;
+    if (st.role === 'host') lobbyOut();
+  }
+  function backToLobby() {
+    st.inMatch = false;
+    if (st.role === 'host') { send({ t: 'back' }); lobbyOut(); }
+    $('#hud').hidden = true; $('#scoreboard').hidden = true;
+    startDemo(); UI.show('online');
+  }
+
+  // ---------- host side, every physics tick: friends' penguins use the controls they sent
+  function applyInputs() {
+    for (const c of M.cars) {
+      const R = c.remote && c.net;
+      if (!R) continue;
+      const k = c.ctrl;
+      k.throttle = clamp(+R.th || 0, -1, 1); k.steer = clamp(+R.st || 0, -1, 1); k.pitch = clamp(+R.pi || 0, -1, 1); k.roll = 0;
+      // jump presses are counted on the friend's side, so a tap between two of their updates still jumps once
+      const jn = R.jn | 0;
+      if (jn > c.netJn) { c.netJq = Math.min(3, c.netJq + jn - c.netJn); c.netJn = jn; }
+      if (c.netJq > 0) { if (c.netJout) c.netJout = false; else { c.netJq--; c.netJout = true; } }
+      else c.netJout = !!R.j;
+      k.jump = c.netJout; k.boost = !!R.b; k.slide = !!R.s; k.charge = !!R.c;
+    }
+  }
+  // host side, every frame after the physics: an update for the friends ~30 times a second
+  const r3 = (x) => Math.round(x * 1000) / 1000;
+  function hostFrame() {
+    if (st.role !== 'host') { ev.length = 0; return; }
+    for (const c of M.cars) if (c.justLanded) { c.netLand = (c.netLand | 0) + 1; c.netImp = c.landImpact; }   // landings, for the squash
+    if (!st.conns.size) { ev.length = 0; return; }
+    const now = performance.now();
+    if (now - lastStats > NET_STATS_MS) { lastStats = now; sendStats(); }
+    if (now - lastSnap < NET_SNAP_MS - 2) return;
+    lastSnap = now;
+    const b = M.ball;
+    const cars = M.cars.map((c) => [
+      r3(c.p.x), r3(c.p.y), r3(c.p.z), r3(c.q.x), r3(c.q.y), r3(c.q.z), r3(c.q.w), r3(c.v.x), r3(c.v.y), r3(c.v.z),
+      Math.round(c.boost),
+      (c.onGround ? 1 : 0) | (c.demolished ? 2 : 0) | (c.supersonic ? 4 : 0) | (c.boosting ? 8 : 0) | (c.burstT > 0 ? 16 : 0) | (c.ctrl.slide ? 32 : 0),
+      Math.round(c.charge * 100), Math.round(c.ctrl.steer * 100), c.netLand | 0, Math.round((c.netImp || 0) * 10),
+    ]);
+    send({
+      t: 's', ts: now, st: M.state, sT: r3(M.stateT), cl: r3(M.clock), ot: r3(M.otTime), ov: M.overtime ? 1 : 0, sc: M.score, bh: M.ballHidden ? 1 : 0,
+      b: [r3(b.p.x), r3(b.p.y), r3(b.p.z), r3(b.v.x), r3(b.v.y), r3(b.v.z), r3(b.w.x), r3(b.w.y), r3(b.w.z)],
+      c: cars, pd: M.pads.map((p) => (p.active ? 0 : Math.ceil(p.t * 10))), ev: ev.splice(0),
+    });
+  }
+  function sendStats() {
+    if (st.role !== 'host') return;
+    send({ t: 'stats', s: M.cars.map((c) => [c.stat.score, c.stat.goals, c.stat.assists, c.stat.saves, c.stat.shots, c.stat.demos, c.stat.touches]) });
+  }
+  function applyStats(s) {
+    if (!Array.isArray(s)) return;
+    M.cars.forEach((c, i) => {
+      const a = s[i]; if (!Array.isArray(a)) return;
+      [c.stat.score, c.stat.goals, c.stat.assists, c.stat.saves, c.stat.shots, c.stat.demos, c.stat.touches] = a.map((x) => x | 0);
+    });
+  }
+
+  // ---------- friend side, every frame: send my controls, draw the host's match NET_DELAY_MS behind
+  function sendInput() {
+    const menu = UI.cur === 'pause';
+    gatherInput(inCtrl);
+    sendIn.th = menu ? 0 : Math.round(inCtrl.throttle * 100) / 100; sendIn.st = menu ? 0 : Math.round(inCtrl.steer * 100) / 100;
+    sendIn.pi = menu ? 0 : Math.round(inCtrl.pitch * 100) / 100;
+    sendIn.j = !menu && inCtrl.jump ? 1 : 0; sendIn.jn = PRESSES.jump; sendIn.b = !menu && inCtrl.boost ? 1 : 0;
+    sendIn.s = !menu && inCtrl.slide ? 1 : 0; sendIn.c = !menu && inCtrl.charge ? 1 : 0;
+    send(sendIn);
+  }
+  function guestFrame(dt) {
+    if (M.state !== 'over') sendInput();
+    if (M.slowmo > 0) M.slowmo -= dt;
+    if (!snaps.length || off === null) return;
+    const rt = performance.now() - off - NET_DELAY_MS;
+    if (rt < snaps[0].ts) return;   // still filling the buffer
+    // events happen when their update is drawn, so a goal banner lines up with the ball crossing the line
+    for (const s of snaps) { if (s.ts > rt) break; if (!s.fired) { s.fired = true; fire(s.m.ev); } }
+    while (snaps.length > 2 && snaps[1].ts <= rt) snaps.shift();
+    const A0 = snaps[0], B0 = snaps[1] || A0;
+    const a = A0.m, bm = B0.m, k = B0 === A0 ? 1 : clamp((rt - A0.ts) / (B0.ts - A0.ts), 0, 1);
+    // match state
+    M.state = a.st; M.stateT = +a.sT || 0; M.clock = +a.cl || 0; M.otTime = +a.ot || 0; M.overtime = !!a.ov;
+    if (Array.isArray(a.sc)) { M.score[0] = a.sc[0] | 0; M.score[1] = a.sc[1] | 0; }
+    M.ballHidden = !!a.bh;
+    if (M.state === 'countdown' && prevState !== 'countdown') { endHighlight(); M.lastCount = 4; }   // kickoff
+    if (M.state === 'countdown') {
+      const cnt = Math.ceil(M.stateT);
+      if (cnt < M.lastCount && cnt > 0) { banner(String(cnt), M.overtime ? 'Overtime · next goal wins' : '', 'yellow', 0.9); Sfx.beep(false); }
+      M.lastCount = cnt;
+    } else if (M.state === 'play' && prevState === 'countdown') { banner('GO!', '', 'yellow', 0.7); Sfx.beep(true); }
+    prevState = M.state;
+    // penguins
+    const n = Math.min(M.cars.length, a.c.length, bm.c.length);
+    for (let i = 0; i < n; i++) {
+      const c = M.cars[i], ca = a.c[i], cb = bm.c[i];
+      c.p.set(lerp(ca[0], cb[0], k), lerp(ca[1], cb[1], k), lerp(ca[2], cb[2], k));
+      _qa.set(ca[3], ca[4], ca[5], ca[6]); _qb.set(cb[3], cb[4], cb[5], cb[6]);
+      c.q.slerpQuaternions(_qa.normalize(), _qb.normalize(), k);
+      c.v.set(lerp(ca[7], cb[7], k), lerp(ca[8], cb[8], k), lerp(ca[9], cb[9], k));
+      c.pp.copy(c.p); c.pq.copy(c.q); updateBasis(c);
+      const f = ca[11];
+      c.boost = ca[10]; c.onGround = !!(f & 1); c.demolished = !!(f & 2); c.supersonic = !!(f & 4); c.boosting = !!(f & 8);
+      c.burstT = f & 16 ? 1 : 0; c.ctrl.slide = !!(f & 32); c.charge = ca[12] / 100; c.ctrl.steer = ca[13] / 100;
+      if (c.netLand === undefined) c.netLand = ca[14];
+      else if (ca[14] !== c.netLand) { c.netLand = ca[14]; c.justLanded = true; c.landImpact = ca[15] / 10; }
+    }
+    // ball
+    const B = M.ball, ba = a.b, bb = bm.b;
+    B.p.set(lerp(ba[0], bb[0], k), lerp(ba[1], bb[1], k), lerp(ba[2], bb[2], k)); B.pp.copy(B.p);
+    B.v.set(ba[3], ba[4], ba[5]); B.w.set(ba[6], ba[7], ba[8]);
+    // fish pads and crystals
+    if (Array.isArray(a.pd)) for (let i = 0; i < M.pads.length && i < a.pd.length; i++) { const v = a.pd[i] | 0; M.pads[i].active = v === 0; M.pads[i].t = v / 10; }
+  }
+  function fire(list) {
+    if (!Array.isArray(list)) return;
+    const car = (i) => (i >= 0 && i < M.cars.length ? M.cars[i] : null);
+    for (const e of list) {
+      if (!Array.isArray(e)) continue;
+      const a = car(e[1]), b = car(e[2]);
+      switch (e[0]) {
+        case 'goal': goalFx(e[1] ? 1 : 0, b, car(e[3])); break;
+        case 'demo': if (a && b) demoFx(a, b); break;
+        case 'touch': if (a) touchFx(a, +e[2] || 0, +e[3] || 0, !!e[4], _nv.set(+e[5] || 0, +e[6] || 0, +e[7] || 0)); break;
+        case 'save': if (a) saveFx(a, M.ball.p); break;
+        case 'score': if (a && a === M.player) toast(`+${e[2] | 0}`, String(e[3] || '')); break;
+        case 'pick': if (b && M.pads[e[1]]) M.onPickup(b, M.pads[e[1]]); break;
+        case 'ce': if (a) carEventFx(a, e[2] ? 'flip' : 'jump'); break;
+        case 'ot': otFx(); break;
+        case 'end': M.state = 'over'; endFx(); break;
+      }
+    }
+  }
+
+  // ---------- the "Play with friends" screen
+  function render(root) {
+    const hostLobby = st.role === 'host', guestLobby = st.role === 'guest' && st.conns.size > 0;
+    const status = st.status ? `<p class="net-status" role="status">${esc(st.status)}</p>` : '';
+    let body = '', dock = '';
+    if (!hostLobby && !guestLobby) {
+      body = `
+        <section class="sect"><h3>Your name</h3><input id="net-name" class="net-input" maxlength="16" value="${esc(myName())}" autocomplete="off" spellcheck="false"></section>
+        <section class="sect"><h3>Host a room</h3>
+          <p class="note">Make a room, then send the invite link to your friends. Up to 4 players; bots fill any empty spots.</p>
+          <button class="btn big green" data-net="host" type="button">CREATE ROOM</button></section>
+        <section class="sect"><h3>Join a friend</h3>
+          <p class="note">Type your friend's 5-letter room code, or just open the invite link they sent you.</p>
+          <div class="net-join"><input id="net-code" class="net-input code" maxlength="5" placeholder="ABCDE" value="${esc(st.typed)}" autocomplete="off" spellcheck="false"><button class="btn blue" data-net="join" type="button">JOIN</button></div></section>`;
+    } else {
+      const t = hostLobby ? teamsFor(st.players) : st.players.map((p) => p.team);
+      const team = (k) => `<div class="net-team t${k}"><h4>${TEAM_LABEL[k]}</h4>${st.players.map((p, i) => (t[i] === k ? `<div class="net-p${p.id === st.myId ? ' me' : ''}">${esc(p.name)}${p.id === 'host' ? ' <span class="tag">HOST</span>' : ''}${p.id === st.myId ? ' <span class="tag you">YOU</span>' : ''}</div>` : '')).join('')}<div class="net-p bot">+ bots fill the rest</div></div>`;
+      const chip = (attr, val, on, label) => `<button class="chip" data-net="${attr}" data-v="${val}" ${on ? 'aria-pressed="true"' : 'aria-pressed="false"'} ${hostLobby ? '' : 'disabled'} type="button">${label}</button>`;
+      body = `
+        <section class="sect net-room"><h3>Room code</h3><div class="net-code">${esc(st.code)}</div>
+          ${hostLobby ? `<div class="net-join"><input class="net-input link" id="net-link" readonly value="${esc(inviteUrl())}"><button class="btn green" data-net="copy" type="button">COPY INVITE LINK</button></div>
+          <p class="note">Send the link to your friends: opening it joins this room. Keep this tab open while you play; the match runs on your computer.</p>` : '<p class="note">You\'re in! The host picks the mode and starts the match.</p>'}</section>
+        <section class="sect"><h3>Players (${st.players.length}/4)</h3><div class="net-teams">${team(0)}${team(1)}</div></section>
+        <section class="sect"><h3>Mode</h3><div class="chips">${Object.keys(MODES).map((m) => chip('mode', m, st.mode === m, `${MODES[m].label} · ${MODES[m].name}`)).join('')}</div></section>
+        <section class="sect"><h3>Teams</h3><div class="chips">${chip('together', 0, !st.together, 'Friends vs friends')}${chip('together', 1, st.together, 'All together vs bots')}</div></section>
+        <section class="sect"><h3>Bots</h3><div class="chips">${LEVEL_ORDER.map((k) => chip('bots', k, st.bots === k, LEVELS[k].label)).join('')}</div></section>
+        <section class="sect"><h3>Match length</h3><div class="chips">${[[120, '2 min'], [180, '3 min'], [300, '5 min']].map(([s, l]) => chip('len', s, st.len === s, l)).join('')}</div></section>`;
+      const need = st.players.length < 2 ? 'Waiting for a friend to join…' : !fits() ? `Too many players on a team for ${MODES[st.mode].label}: pick a bigger mode.` : '';
+      dock = hostLobby
+        ? `<div class="dock"><span class="reward-line">${need ? esc(need) : `${st.players.length} players · ${FISH_SVG} fish for everyone`}</span><button class="btn big green" data-net="start" ${need ? 'disabled' : ''} type="button">START</button></div>`
+        : `<div class="dock"><span class="reward-line">${st.inMatch ? 'A match is on: you\'ll play in the next one.' : 'Waiting for the host to start…'}</span></div>`;
+    }
+    root.innerHTML = `
+      <div class="topbar"><button class="btn white sm" data-net="back" type="button">← ${hostLobby || guestLobby ? 'Leave room' : 'Back'}</button><h2>Play with friends</h2><div class="grow"></div></div>
+      <div class="setup">${status}${body}</div>${dock}`;
+  }
+  document.addEventListener('click', (e) => {
+    const t = e.target.closest('[data-net]');
+    if (!t || t.disabled) return;
+    const a = t.dataset.net, v = t.dataset.v;
+    Sfx.click && Sfx.click();
+    if (a === 'host') { host(); return; }
+    if (a === 'join') { st.maxTries = 2; join($('#net-code') ? $('#net-code').value : st.typed, 0); return; }
+    if (a === 'back') { leave(); UI.show('title'); return; }
+    if (a === 'lobby') { backToLobby(); return; }
+    if (a === 'copy') {
+      const url = inviteUrl(), done = () => { st.status = 'Invite link copied! Paste it to your friends.'; rerender(); };
+      if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(url).then(done, () => { const i = $('#net-link'); if (i) i.select(); });
+      else { const i = $('#net-link'); if (i) i.select(); }
+      return;
+    }
+    if (a === 'start') { start(); return; }
+    if (st.role !== 'host') return;
+    if (a === 'mode' && MODES[v]) st.mode = v;
+    else if (a === 'together') st.together = v === '1';
+    else if (a === 'bots' && LEVELS[v]) st.bots = v;
+    else if (a === 'len') st.len = +v || 180;
+    else return;
+    lobbyOut(); rerender();
+  });
+  document.addEventListener('input', (e) => {
+    if (e.target.id === 'net-name') { save.netName = cleanName(e.target.value); persist(); }
+    else if (e.target.id === 'net-code') { const c = cleanCode(e.target.value); if (c !== e.target.value) e.target.value = c; st.typed = c; }
+  });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Enter' && e.target.id === 'net-code') { st.maxTries = 2; join(e.target.value, 0); } });
+
+  // ?room=CODE in the address (an invite link) joins that room straight away
+  function boot() {
+    const m = /[?&]room=([A-Za-z]{5})\b/.exec(location.search);
+    if (!m) return;
+    st.maxTries = NET_JOIN_TRIES;
+    UI.show('online');
+    join(m[1], 0);
+  }
+  const resultButtons = () => `<button class="btn green" data-net="lobby" type="button">Back to lobby</button>`;
+  return {
+    ev, boot, render, leave, applyInputs, hostFrame, guestFrame, sendStats, resultButtons,
+    get role() { return st.role; },
+  };
+})();
 // =====================================================================
 //  UI — title, match setup, garage (upgrades), locker (cosmetics),
 //  how to play, settings, pause, results
@@ -6662,7 +7166,7 @@ const UI_LOGO_ICE = '<svg class="drip" viewBox="0 0 356.5 34" preserveAspectRati
 const UI_MASCOT = '<svg class="mascot" viewBox="0 0 100 96" aria-hidden="true"><g stroke="#1b1d3a" stroke-width="4.5" stroke-linejoin="round"><path d="M44 18C38 6 46 0 50 10C52 0 62 2 56 16Z" fill="#2b3050"/><path d="M13 84C8 44 28 15 50 15C72 15 92 44 87 84Z" fill="#2b3050"/><path d="M50 42C40 30 20 36 22 57C24 74 38 82 50 82C62 82 76 74 78 57C80 36 60 30 50 42Z" fill="#fff"/><path d="M43 62Q50 57.5 57 62Q53 71 50 71Q47 71 43 62Z" fill="#ffa41b" stroke-width="3.5"/></g><ellipse cx="40" cy="54" rx="5" ry="6.5" fill="#1b1d3a"/><ellipse cx="60" cy="54" rx="5" ry="6.5" fill="#1b1d3a"/><circle cx="41.8" cy="51.4" r="2" fill="#fff"/><circle cx="61.8" cy="51.4" r="2" fill="#fff"/><ellipse cx="31" cy="66" rx="5" ry="3" fill="#ff5fa8" opacity=".6"/><ellipse cx="69" cy="66" rx="5" ry="3" fill="#ff5fa8" opacity=".6"/><path d="M28 21Q36 15 44 17" fill="none" stroke="#5b6494" stroke-width="3" stroke-linecap="round"/><path d="M-2 100C-2 84 8 76 20 80C28 72 42 73 50 80C58 72 72 72 80 79C92 74 102 84 102 100Z" fill="#fff"/><path d="M-2 92C-1 83 9 77 20 80C28 72 42 73 50 80C58 72 72 72 80 79C92 74 101 82 102 92" fill="none" stroke="#1b1d3a" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round"/><g fill="#2b3050" stroke="#1b1d3a" stroke-width="4" stroke-linejoin="round"><path d="M12 82C8 74 12 66 20 68C26 70 27 78 23 84Z"/><path d="M88 82C92 74 88 66 80 68C74 70 73 78 77 84Z"/></g></svg>';
 
 const UI = (() => {
-  const screens = ['title', 'play', 'garage', 'locker', 'howto', 'settings', 'results', 'pause'];
+  const screens = ['title', 'play', 'online', 'garage', 'locker', 'howto', 'settings', 'results', 'pause'];
   let cur = null, lockerTab = 'hat', resetArmed = false;
   // purchase confirm state: nothing is bought on the first click
   let lockerSel = null, upgSel = null, armedAt = 0, notice = '', bump = false;
@@ -6716,6 +7220,7 @@ const UI = (() => {
         </div>
         <nav class="title-actions">
           <button class="btn big" data-go="play" type="button">${UI_PFACE}PLAY</button>
+          <button class="btn blue friends-btn" data-go="online" type="button">PLAY WITH FRIENDS</button>
           <div class="row">
             <button class="btn blue" data-go="garage" type="button">Garage</button>
             <button class="btn pink" data-go="locker" type="button">Locker</button>
@@ -6728,6 +7233,7 @@ const UI = (() => {
           </div>
         </nav>`;
     },
+    online() { Online.render(el('online')); },
     play() {
       const L = save.last;
       const modeCard = (m) => { const d = MODES[m]; const dots = (cls) => `<span class="dot ${cls}"></span>`.repeat(d.n); return `<button class="opt" data-mode="${m}" ${sel(L.mode === m)} type="button"><span class="t">${d.label} · ${d.name}</span><span class="teams">${dots('b')} vs ${dots('o')}</span><span class="s">${d.desc}</span></button>`; };
@@ -6867,7 +7373,10 @@ const UI = (() => {
         </div></div>`;
     },
     pause() {
-      el('pause').innerHTML = `<div class="card pause-card"><h2>Paused</h2>
+      el('pause').innerHTML = M.online ? `<div class="card pause-card"><h2>Menu</h2>
+        <button class="btn green" data-resume type="button">Back to the match</button>
+        <button class="btn white" data-quit type="button">Leave the match</button>
+        <p class="panel-note" style="margin:4px 0 0">Online matches keep going while this menu is open.</p></div>` : `<div class="card pause-card"><h2>Paused</h2>
         <button class="btn green" data-resume type="button">Resume</button>
         <button class="btn blue" data-restart type="button">Restart match</button>
         <button class="btn white" data-quit type="button">Quit to menu</button>
@@ -6965,9 +7474,9 @@ const UI = (() => {
     }
     if ('resume' in t.dataset) { togglePause(); return; }
     if ('restart' in t.dataset) { M.paused = false; show(null); startMatch(M.cfg); $('#hud').hidden = false; return; }
-    if ('quit' in t.dataset) { M.paused = false; toMenu(); return; }
+    if ('quit' in t.dataset) { M.paused = false; if (M.online) Online.leave(); toMenu(); return; }
     if ('again' in t.dataset) { show(null); startMatch(M.cfg); $('#hud').hidden = false; return; }
-    if ('menu' in t.dataset) { toMenu(); return; }
+    if ('menu' in t.dataset) { if (M.online) Online.leave(); toMenu(); return; }
   });
   document.addEventListener('input', (e) => {
     const t = e.target, s = save.settings;
@@ -6999,13 +7508,15 @@ const UI = (() => {
   }
   function togglePause() {
     if (!inMatch() || M.state === 'over') return;
+    // online: the menu opens over the match, which keeps running for everyone
+    if (M.online) { clearInput(); if (cur === 'pause') { show(null); canvas.focus(); } else show('pause'); return; }
     M.paused = !M.paused;
     clearInput();
     if (M.paused) show('pause'); else { show(null); canvas.focus(); }
   }
   function results() {
     if (!M.player || M.demo) return;
-    const p = M.player, win = M.score[0] > M.score[1], cfg = M.cfg, L = LEVELS[cfg.opp];
+    const p = M.player, win = myWin(), cfg = M.cfg, L = LEVELS[cfg.opp];
     const parts = [['Match', 25]];
     if (win) parts.push(['Win', 40]);
     if (p.stat.goals) parts.push([`${p.stat.goals} goal${p.stat.goals > 1 ? 's' : ''}`, p.stat.goals * 12]);
@@ -7025,11 +7536,11 @@ const UI = (() => {
     el('results').innerHTML = `
       <div class="res-banner ${win ? 'win' : 'lose'}">${win ? 'VICTORY!' : 'DEFEAT'}${UI_LOGO_CAP}</div>
       <div class="res-score"><span style="color:#7fd0ff">${M.score[0]}</span><span>–</span><span style="color:#ffb15c">${M.score[1]}</span></div>
-      <div class="reward-line">${MODES[cfg.mode].label} vs ${L.label} bots${M.overtime ? ' · overtime' : ''}${cfg.fair ? ' · fair play' : ''}</div>
+      <div class="reward-line">${cfg.online ? `${MODES[cfg.mode].label} online with friends · you were ${TEAM_LABEL[p.team].toLowerCase()}` : `${MODES[cfg.mode].label} vs ${L.label} bots`}${M.overtime ? ' · overtime' : ''}${cfg.fair && !cfg.online ? ' · fair play' : ''}</div>
       <div class="table-wrap">${statsTable()}</div>
       <div class="rewards">${parts.map(([n, v]) => `<span class="pill">${esc(n)} +${v}</span>`).join('')}<span class="pill">×${mult.toFixed(2).replace(/\.?0+$/, '')} bonus</span><span class="pill gold">${FISH_SVG}+${fish}</span></div>
       ${unlocked ? '<div class="reward-line" style="margin-top:12px">You beat a God bot. The Halo is now in your locker.</div>' : ''}
-      <div class="res-actions"><button class="btn green" data-again type="button">Rematch</button><button class="btn blue" data-go="garage" type="button">Garage</button><button class="btn white" data-menu type="button">Main menu</button></div>`;
+      <div class="res-actions">${cfg.online ? Online.resultButtons() : '<button class="btn green" data-again type="button">Rematch</button><button class="btn blue" data-go="garage" type="button">Garage</button>'}<button class="btn white" data-menu type="button">${cfg.online ? 'Leave room' : 'Main menu'}</button></div>`;
     show('results');
   }
   const showroomOn = () => cur === 'garage' || cur === 'locker';
@@ -7051,6 +7562,7 @@ async function boot() {
   UI.show('title');
   const ld = $('#loading'); ld.style.transition = 'opacity .5s'; ld.style.opacity = 0; setTimeout(() => { ld.hidden = true; }, 500);
   requestAnimationFrame((t) => { lastFrame = t; frame(t); });
+  Online.boot();   // ?room=CODE in the address joins a friend's room straight away
 }
 addEventListener('resize', resize);
 addEventListener('pointerdown', () => Sfx.init());

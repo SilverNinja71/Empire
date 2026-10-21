@@ -45,7 +45,7 @@ const UI_LOGO_ICE = '<svg class="drip" viewBox="0 0 356.5 34" preserveAspectRati
 const UI_MASCOT = '<svg class="mascot" viewBox="0 0 100 96" aria-hidden="true"><g stroke="#1b1d3a" stroke-width="4.5" stroke-linejoin="round"><path d="M44 18C38 6 46 0 50 10C52 0 62 2 56 16Z" fill="#2b3050"/><path d="M13 84C8 44 28 15 50 15C72 15 92 44 87 84Z" fill="#2b3050"/><path d="M50 42C40 30 20 36 22 57C24 74 38 82 50 82C62 82 76 74 78 57C80 36 60 30 50 42Z" fill="#fff"/><path d="M43 62Q50 57.5 57 62Q53 71 50 71Q47 71 43 62Z" fill="#ffa41b" stroke-width="3.5"/></g><ellipse cx="40" cy="54" rx="5" ry="6.5" fill="#1b1d3a"/><ellipse cx="60" cy="54" rx="5" ry="6.5" fill="#1b1d3a"/><circle cx="41.8" cy="51.4" r="2" fill="#fff"/><circle cx="61.8" cy="51.4" r="2" fill="#fff"/><ellipse cx="31" cy="66" rx="5" ry="3" fill="#ff5fa8" opacity=".6"/><ellipse cx="69" cy="66" rx="5" ry="3" fill="#ff5fa8" opacity=".6"/><path d="M28 21Q36 15 44 17" fill="none" stroke="#5b6494" stroke-width="3" stroke-linecap="round"/><path d="M-2 100C-2 84 8 76 20 80C28 72 42 73 50 80C58 72 72 72 80 79C92 74 102 84 102 100Z" fill="#fff"/><path d="M-2 92C-1 83 9 77 20 80C28 72 42 73 50 80C58 72 72 72 80 79C92 74 101 82 102 92" fill="none" stroke="#1b1d3a" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round"/><g fill="#2b3050" stroke="#1b1d3a" stroke-width="4" stroke-linejoin="round"><path d="M12 82C8 74 12 66 20 68C26 70 27 78 23 84Z"/><path d="M88 82C92 74 88 66 80 68C74 70 73 78 77 84Z"/></g></svg>';
 
 const UI = (() => {
-  const screens = ['title', 'play', 'garage', 'locker', 'howto', 'settings', 'results', 'pause'];
+  const screens = ['title', 'play', 'online', 'garage', 'locker', 'howto', 'settings', 'results', 'pause'];
   let cur = null, lockerTab = 'hat', resetArmed = false;
   // purchase confirm state: nothing is bought on the first click
   let lockerSel = null, upgSel = null, armedAt = 0, notice = '', bump = false;
@@ -99,6 +99,7 @@ const UI = (() => {
         </div>
         <nav class="title-actions">
           <button class="btn big" data-go="play" type="button">${UI_PFACE}PLAY</button>
+          <button class="btn blue friends-btn" data-go="online" type="button">PLAY WITH FRIENDS</button>
           <div class="row">
             <button class="btn blue" data-go="garage" type="button">Garage</button>
             <button class="btn pink" data-go="locker" type="button">Locker</button>
@@ -111,6 +112,7 @@ const UI = (() => {
           </div>
         </nav>`;
     },
+    online() { Online.render(el('online')); },
     play() {
       const L = save.last;
       const modeCard = (m) => { const d = MODES[m]; const dots = (cls) => `<span class="dot ${cls}"></span>`.repeat(d.n); return `<button class="opt" data-mode="${m}" ${sel(L.mode === m)} type="button"><span class="t">${d.label} · ${d.name}</span><span class="teams">${dots('b')} vs ${dots('o')}</span><span class="s">${d.desc}</span></button>`; };
@@ -250,7 +252,10 @@ const UI = (() => {
         </div></div>`;
     },
     pause() {
-      el('pause').innerHTML = `<div class="card pause-card"><h2>Paused</h2>
+      el('pause').innerHTML = M.online ? `<div class="card pause-card"><h2>Menu</h2>
+        <button class="btn green" data-resume type="button">Back to the match</button>
+        <button class="btn white" data-quit type="button">Leave the match</button>
+        <p class="panel-note" style="margin:4px 0 0">Online matches keep going while this menu is open.</p></div>` : `<div class="card pause-card"><h2>Paused</h2>
         <button class="btn green" data-resume type="button">Resume</button>
         <button class="btn blue" data-restart type="button">Restart match</button>
         <button class="btn white" data-quit type="button">Quit to menu</button>
@@ -348,9 +353,9 @@ const UI = (() => {
     }
     if ('resume' in t.dataset) { togglePause(); return; }
     if ('restart' in t.dataset) { M.paused = false; show(null); startMatch(M.cfg); $('#hud').hidden = false; return; }
-    if ('quit' in t.dataset) { M.paused = false; toMenu(); return; }
+    if ('quit' in t.dataset) { M.paused = false; if (M.online) Online.leave(); toMenu(); return; }
     if ('again' in t.dataset) { show(null); startMatch(M.cfg); $('#hud').hidden = false; return; }
-    if ('menu' in t.dataset) { toMenu(); return; }
+    if ('menu' in t.dataset) { if (M.online) Online.leave(); toMenu(); return; }
   });
   document.addEventListener('input', (e) => {
     const t = e.target, s = save.settings;
@@ -382,13 +387,15 @@ const UI = (() => {
   }
   function togglePause() {
     if (!inMatch() || M.state === 'over') return;
+    // online: the menu opens over the match, which keeps running for everyone
+    if (M.online) { clearInput(); if (cur === 'pause') { show(null); canvas.focus(); } else show('pause'); return; }
     M.paused = !M.paused;
     clearInput();
     if (M.paused) show('pause'); else { show(null); canvas.focus(); }
   }
   function results() {
     if (!M.player || M.demo) return;
-    const p = M.player, win = M.score[0] > M.score[1], cfg = M.cfg, L = LEVELS[cfg.opp];
+    const p = M.player, win = myWin(), cfg = M.cfg, L = LEVELS[cfg.opp];
     const parts = [['Match', 25]];
     if (win) parts.push(['Win', 40]);
     if (p.stat.goals) parts.push([`${p.stat.goals} goal${p.stat.goals > 1 ? 's' : ''}`, p.stat.goals * 12]);
@@ -408,11 +415,11 @@ const UI = (() => {
     el('results').innerHTML = `
       <div class="res-banner ${win ? 'win' : 'lose'}">${win ? 'VICTORY!' : 'DEFEAT'}${UI_LOGO_CAP}</div>
       <div class="res-score"><span style="color:#7fd0ff">${M.score[0]}</span><span>–</span><span style="color:#ffb15c">${M.score[1]}</span></div>
-      <div class="reward-line">${MODES[cfg.mode].label} vs ${L.label} bots${M.overtime ? ' · overtime' : ''}${cfg.fair ? ' · fair play' : ''}</div>
+      <div class="reward-line">${cfg.online ? `${MODES[cfg.mode].label} online with friends · you were ${TEAM_LABEL[p.team].toLowerCase()}` : `${MODES[cfg.mode].label} vs ${L.label} bots`}${M.overtime ? ' · overtime' : ''}${cfg.fair && !cfg.online ? ' · fair play' : ''}</div>
       <div class="table-wrap">${statsTable()}</div>
       <div class="rewards">${parts.map(([n, v]) => `<span class="pill">${esc(n)} +${v}</span>`).join('')}<span class="pill">×${mult.toFixed(2).replace(/\.?0+$/, '')} bonus</span><span class="pill gold">${FISH_SVG}+${fish}</span></div>
       ${unlocked ? '<div class="reward-line" style="margin-top:12px">You beat a God bot. The Halo is now in your locker.</div>' : ''}
-      <div class="res-actions"><button class="btn green" data-again type="button">Rematch</button><button class="btn blue" data-go="garage" type="button">Garage</button><button class="btn white" data-menu type="button">Main menu</button></div>`;
+      <div class="res-actions">${cfg.online ? Online.resultButtons() : '<button class="btn green" data-again type="button">Rematch</button><button class="btn blue" data-go="garage" type="button">Garage</button>'}<button class="btn white" data-menu type="button">${cfg.online ? 'Leave room' : 'Main menu'}</button></div>`;
     show('results');
   }
   const showroomOn = () => cur === 'garage' || cur === 'locker';
@@ -434,6 +441,7 @@ async function boot() {
   UI.show('title');
   const ld = $('#loading'); ld.style.transition = 'opacity .5s'; ld.style.opacity = 0; setTimeout(() => { ld.hidden = true; }, 500);
   requestAnimationFrame((t) => { lastFrame = t; frame(t); });
+  Online.boot();   // ?room=CODE in the address joins a friend's room straight away
 }
 addEventListener('resize', resize);
 addEventListener('pointerdown', () => Sfx.init());
