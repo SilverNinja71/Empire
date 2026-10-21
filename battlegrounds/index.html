@@ -388,6 +388,11 @@ body.touch .mini{height:52px}
   <div id="settings" class="glass" role="dialog" aria-label="Settings" hidden>
     <div class="ht"><h4>Settings</h4><button type="button" class="sbtn" id="setClose">Close</button></div>
     <label class="opt k-only"><input type="checkbox" id="optLock"> Lock the mouse when I click the arena</label>
+    <div class="ht"><h4>Avatar</h4></div>
+    <label class="opt"><span>Hat</span><select id="optHat"></select></label>
+    <label class="opt"><span>On your back</span><select id="optBack"></select></label>
+    <label class="opt"><span>Face</span><select id="optFace"></select></label>
+    <label class="opt"><input type="checkbox" id="optStuds"> Studs on blocks (classic look)</label>
     <label class="opt"><span>Bot difficulty (hosted servers)</span><select id="optBots"><option value="easy">Easy</option><option value="normal">Normal</option><option value="hard">Hard</option></select></label>
     <div class="k-only">
       <div class="ht"><h4>Keys</h4><button type="button" class="sbtn" id="keysReset">Reset</button></div>
@@ -558,20 +563,143 @@ function lam(color, opts) {
 // Bake every plain-coloured box under each pivot into one vertex-coloured mesh, so a ~60-box character
 // costs ~12 draw calls instead of ~60 (and the same again in the shadow pass). Special meshes (emissive,
 // transparent, swapped or toggled one by one) keep their own material and stay separate.
-const rigMat = shared(new THREE.MeshLambertMaterial({ vertexColors: true }));
+// ---- Roblox plastic ----
+// Fighters are drawn in glossy plastic (low roughness, a soft sky reflection) with studs on top faces and
+// inlets underneath. Studs come from a per-vertex grid (attribute `stud`: u, v, which face, neon) baked by
+// mergeChildren, so they cost no textures; SETTINGS.studs flips them. stud.w lights trim parts while awakened.
+const STUD = 0.4;
+const RIG_U = { uStuds: { value: 1 }, uTime: { value: 0 } };
+let _rigEnv = null;
+function rigEnv() {
+  if (_rigEnv) return _rigEnv;
+  const s = new THREE.Scene(), g = new THREE.SphereGeometry(10, 24, 12), P = g.attributes.position, col = [];
+  const top = new THREE.Color('#8cc8ff'), hor = new THREE.Color('#f4f8ff'), gr = new THREE.Color('#6f7f55'), tc = new THREE.Color();
+  for (let i = 0; i < P.count; i++) {
+    const y = P.getY(i) / 10;
+    if (y > 0) tc.copy(hor).lerp(top, Math.pow(y, 0.6)); else tc.copy(hor).lerp(gr, Math.min(1, -y * 3));
+    col.push(tc.r, tc.g, tc.b);
+  }
+  g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+  s.add(new THREE.Mesh(g, new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.BackSide })));
+  const sunBall = new THREE.Mesh(new THREE.SphereGeometry(1.1, 12, 8), new THREE.MeshBasicMaterial({ color: new THREE.Color(5, 4.7, 4.2) }));
+  sunBall.position.copy(SUN_DIR).normalize().multiplyScalar(8.5); s.add(sunBall);
+  const pm = new THREE.PMREMGenerator(renderer);
+  _rigEnv = shared(pm.fromScene(s, 0.02).texture);
+  pm.dispose(); g.dispose(); sunBall.geometry.dispose();
+  return _rigEnv;
+}
+const rigMat = shared(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.25, metalness: 0.05, envMap: rigEnv(), envMapIntensity: 0.28 }));
+rigMat.onBeforeCompile = (sh) => {
+  sh.uniforms.uStuds = RIG_U.uStuds; sh.uniforms.uTime = RIG_U.uTime;
+  sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute vec4 stud;\nvarying vec4 vStud;')
+    .replace('#include <begin_vertex>', '#include <begin_vertex>\nvStud = stud;');
+  sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform float uStuds;\nuniform float uTime;\nvarying vec4 vStud;')
+    .replace('#include <color_fragment>', `#include <color_fragment>
+  if (uStuds > 0.5 && abs(vStud.z) > 0.97) {
+    vec2 sg = fract(vStud.xy) - 0.5; float sr = length(sg);
+    if (vStud.z > 0.0) {   // raised stud: a lit cap with a dark rim
+      float disc = 1.0 - smoothstep(0.27, 0.31, sr), rim = smoothstep(0.2, 0.29, sr) * disc;
+      diffuseColor.rgb *= 1.0 + disc * (0.05 + 0.5 * clamp(sg.y - sg.x, 0.0, 0.45)) - rim * 0.38;
+    } else {               // inlet underneath
+      diffuseColor.rgb *= 1.0 - (1.0 - smoothstep(0.2, 0.25, sr)) * 0.5;
+    }
+  }`)
+    .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\n  totalEmissiveRadiance += vColor * vStud.w * (1.2 + 0.6 * sin(uTime * 7.0));');
+};
+// a box with rounded (chamfered) edges: BoxGeometry with 3 segments a side, the inner grid lines pulled
+// out to r from each edge, then the rim bent round with normals that shade like a bevel
+const _bv = new Map();
+function bevelG(w, h, d, r) {
+  const k = w + '|' + h + '|' + d + '|' + r; let g = _bv.get(k); if (g) return g;
+  g = new THREE.BoxGeometry(w, h, d, 3, 3, 3);
+  const P = g.attributes.position, N = g.attributes.normal, half = [w / 2, h / 2, d / 2], p = [0, 0, 0], q = [0, 0, 0];
+  for (let i = 0; i < P.count; i++) {
+    p[0] = P.getX(i); p[1] = P.getY(i); p[2] = P.getZ(i);
+    let l = 0;
+    for (let a = 0; a < 3; a++) {
+      const ins = half[a] - r;
+      if (Math.abs(p[a]) < half[a] - 1e-5) p[a] = Math.sign(p[a]) * ins;
+      const c = Math.max(-ins, Math.min(ins, p[a])); q[a] = p[a] - c; l += q[a] * q[a]; p[a] = c;
+    }
+    l = Math.sqrt(l) || 1;
+    P.setXYZ(i, p[0] + (q[0] / l) * r, p[1] + (q[1] / l) * r, p[2] + (q[2] / l) * r); N.setXYZ(i, q[0] / l, q[1] / l, q[2] / l);
+  }
+  g.computeBoundingSphere(); shared(g); _bv.set(k, g); return g;
+}
+let BEVEL = false;   // on while a fighter is being built
+// face decals: one atlas (4 x 2 faces) and one material; each expression is a plane with its own UVs
+const FACE = (() => {
+  const keys = ['smile', 'smug', 'determined', 'hurt', 'awake', 'dummy', 'grin', 'cool'];
+  const tex = canvasTex(512, 256, (g) => {
+    keys.forEach((k, i) => {
+      g.save(); g.translate((i % 4) * 128, Math.floor(i / 4) * 128);
+      g.fillStyle = g.strokeStyle = '#151515'; g.lineCap = 'round'; g.lineJoin = 'round';
+      const eye = (x, y, rx, ry) => { g.beginPath(); g.ellipse(x, y, rx, ry, 0, 0, TAU); g.fill(); };
+      const line = (w, ...pt) => { g.lineWidth = w; g.beginPath(); g.moveTo(pt[0], pt[1]); for (let j = 2; j < pt.length; j += 2) g.lineTo(pt[j], pt[j + 1]); g.stroke(); };
+      const arc = (y, r, a0, a1, w) => { g.lineWidth = w; g.beginPath(); g.arc(64, y, r, a0, a1); g.stroke(); };
+      if (k === 'smile') { eye(46, 50, 7, 12); eye(82, 50, 7, 12); arc(56, 30, 0.2 * PI, 0.8 * PI, 7); }
+      else if (k === 'smug') {
+        g.beginPath(); g.ellipse(46, 54, 9, 8, 0, 0, PI); g.fill(); g.beginPath(); g.ellipse(82, 54, 9, 8, 0, 0, PI); g.fill();
+        line(5, 36, 52, 56, 54); line(5, 72, 54, 92, 52); line(5, 72, 38, 92, 31);
+        g.lineWidth = 7; g.beginPath(); g.moveTo(46, 86); g.quadraticCurveTo(72, 97, 90, 77); g.stroke();
+      } else if (k === 'determined') { line(7, 30, 36, 56, 45); line(7, 98, 36, 72, 45); eye(46, 58, 7, 9); eye(82, 58, 7, 9); line(7, 48, 92, 64, 88, 80, 92); }
+      else if (k === 'hurt') { line(6, 36, 42, 56, 62); line(6, 56, 42, 36, 62); line(6, 72, 42, 92, 62); line(6, 92, 42, 72, 62); eye(64, 92, 11, 9); }
+      else if (k === 'awake') {
+        line(8, 30, 34, 56, 46); line(8, 98, 34, 72, 46);
+        g.fillStyle = '#ffffff'; eye(45, 59, 10, 8); eye(83, 59, 10, 8); g.fillStyle = '#151515'; eye(46, 60, 3.5, 3.5); eye(82, 60, 3.5, 3.5);
+        g.fillStyle = '#ffffff'; g.fillRect(44, 80, 40, 16); g.lineWidth = 3; g.strokeRect(44, 80, 40, 16); line(2.5, 44, 88, 84, 88);
+        for (let x = 52; x < 84; x += 8) line(2.5, x, 80, x, 96);
+      } else if (k === 'dummy') {
+        line(5, 36, 46, 54, 60); line(5, 54, 46, 36, 60); line(5, 74, 46, 92, 60); line(5, 92, 46, 74, 60);
+        line(5, 44, 88, 84, 88); for (let x = 50; x <= 80; x += 10) line(3, x, 82, x, 94);
+      } else if (k === 'grin') {
+        eye(46, 48, 7, 11); eye(82, 48, 7, 11);
+        g.beginPath(); g.moveTo(34, 70); g.quadraticCurveTo(64, 112, 94, 70); g.closePath(); g.fill();
+        g.fillStyle = '#ffffff'; g.fillRect(42, 71, 44, 8);
+      } else if (k === 'cool') {
+        g.fillRect(26, 42, 34, 22); g.fillRect(68, 42, 34, 22); g.fillRect(56, 46, 16, 6);
+        g.fillStyle = '#7d8696'; g.fillRect(31, 46, 9, 5); g.fillRect(73, 46, 9, 5);
+        arc(60, 24, 0.25 * PI, 0.75 * PI, 6);
+      }
+      g.restore();
+    });
+  });
+  tex.anisotropy = 4;
+  const mat = shared(new THREE.MeshStandardMaterial({ map: tex, alphaTest: 0.5, roughness: 0.45, metalness: 0, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 }));
+  const geo = {};
+  keys.forEach((k, i) => {
+    const pg = new THREE.PlaneGeometry(0.4, 0.4), uv = pg.attributes.uv;
+    const u0 = (i % 4) / 4, v0 = 1 - (Math.floor(i / 4) + 1) / 2;
+    for (let j = 0; j < uv.count; j++) uv.setXY(j, u0 + uv.getX(j) / 4, v0 + uv.getY(j) / 2);
+    geo[k] = shared(pg);
+  });
+  return { mat, geo };
+})();
+function setNeon(f, on) {
+  f.body.traverse((m) => {
+    const ix = m.userData.neonIdx; if (!ix) return;
+    const a = m.geometry.attributes.stud; for (let i = 0; i < ix.length; i++) a.array[ix[i] * 4 + 3] = on ? 1 : 0;
+    a.needsUpdate = true;
+  });
+}
 const _mv = new V3(), _mn = new THREE.Matrix3();
 function mergeChildren(o) {
   const ms = o.children.filter((m) => m.isMesh && LAMC.has(m.material) && m.visible && !m.children.length);
-  if (ms.length < 2) return;
+  if (!ms.length) return;
   let nv = 0, ni = 0;
   for (const m of ms) { const g = m.geometry; nv += g.attributes.position.count; ni += g.index ? g.index.count : g.attributes.position.count; }
-  const pos = new Float32Array(nv * 3), nor = new Float32Array(nv * 3), col = new Float32Array(nv * 3), idx = nv > 65535 ? new Uint32Array(ni) : new Uint16Array(ni);
+  const pos = new Float32Array(nv * 3), nor = new Float32Array(nv * 3), col = new Float32Array(nv * 3), stud = new Float32Array(nv * 4), neonIdx = [], idx = nv > 65535 ? new Uint32Array(ni) : new Uint16Array(ni);
   let vo = 0, io = 0, cast = false;
   for (const m of ms) {
     m.updateMatrix(); _mn.getNormalMatrix(m.matrix);
-    const g = m.geometry, P = g.attributes.position, N = g.attributes.normal, c = m.material.color;
+    const g = m.geometry, P = g.attributes.position, N = g.attributes.normal, c = m.material.color, pr = g.parameters || {};
+    // studs only on the top / bottom of boxes big enough to carry one; trim (neon) parts stay smooth
+    const studs = pr.width !== undefined && pr.depth !== undefined && Math.min(pr.width, pr.depth) >= 0.3 && !m.userData.neon;
+    const nsx = studs ? Math.max(1, Math.round(pr.width / STUD)) : 0, nsz = studs ? Math.max(1, Math.round(pr.depth / STUD)) : 0;
     for (let i = 0; i < P.count; i++) {
-      const k = (vo + i) * 3;
+      const k = (vo + i) * 3, k4 = (vo + i) * 4;
+      if (studs) { const ny = N.getY(i); stud[k4] = (P.getX(i) / pr.width + 0.5) * nsx; stud[k4 + 1] = (P.getZ(i) / pr.depth + 0.5) * nsz; stud[k4 + 2] = ny > 0.9 ? 1 : ny < -0.9 ? -1 : 0; }
+      if (m.userData.neon) neonIdx.push(vo + i);
       _mv.fromBufferAttribute(P, i).applyMatrix4(m.matrix); pos[k] = _mv.x; pos[k + 1] = _mv.y; pos[k + 2] = _mv.z;
       _mv.fromBufferAttribute(N, i).applyMatrix3(_mn).normalize(); nor[k] = _mv.x; nor[k + 1] = _mv.y; nor[k + 2] = _mv.z;
       col[k] = c.r; col[k + 1] = c.g; col[k + 2] = c.b;
@@ -582,9 +710,9 @@ function mergeChildren(o) {
     o.remove(m);
   }
   const geo = new THREE.BufferGeometry();
-  geo.setAttribute('position', new THREE.BufferAttribute(pos, 3)); geo.setAttribute('normal', new THREE.BufferAttribute(nor, 3)); geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  geo.setAttribute('position', new THREE.BufferAttribute(pos, 3)); geo.setAttribute('normal', new THREE.BufferAttribute(nor, 3)); geo.setAttribute('color', new THREE.BufferAttribute(col, 3)); geo.setAttribute('stud', new THREE.BufferAttribute(stud, 4));
   geo.setIndex(new THREE.BufferAttribute(idx, 1)); geo.computeBoundingSphere();
-  const mesh = new THREE.Mesh(geo, rigMat); mesh.castShadow = cast; o.add(mesh);
+  const mesh = new THREE.Mesh(geo, rigMat); mesh.castShadow = cast; if (neonIdx.length) mesh.userData.neonIdx = neonIdx; o.add(mesh);
 }
 function mergeMeshes(root) { const gs = []; root.traverse((o) => { if (!o.isMesh) gs.push(o); }); gs.forEach(mergeChildren); }
 // free everything a model owns (shared caches are skipped)
@@ -596,7 +724,8 @@ function disposeTree(root) {
   });
 }
 function bx(parent, w, h, d, color, x = 0, y = 0, z = 0, mat) {
-  const m = new THREE.Mesh(boxG(w, h, d), mat || lam(color));
+  const t = Math.min(w, h, d);
+  const m = new THREE.Mesh(BEVEL && t >= 0.1 ? bevelG(w, h, d, Math.min(0.04, t * 0.14)) : boxG(w, h, d), mat || lam(color));
   m.position.set(x, y, z); m.castShadow = true; parent.add(m); return m;
 }
 function piv(parent, x = 0, y = 0, z = 0) { const g = new THREE.Group(); g.position.set(x, y, z); parent.add(g); return g; }
@@ -1199,60 +1328,74 @@ function randBodyPoint(f) { return new V3(f.pos.x + rand(-0.55, 0.55), f.pos.y +
 // =====================================================================
 // character models (built facing +z, feet at y=0, exactly ~2 units tall)
 // =====================================================================
-function buildLion(B) {
-  const R = '#d21f2b', Rd = '#9e1420', G = '#f4b52f', W = '#fff3dc', K = '#1c1518', S = '#e3b48a';
+// ---- Roblox R6-style avatars --------------------------------------------------------------
+// Every fighter shares one blocky body: legs, torso, sleeves with hands and a round-edged head
+// wearing a face decal. Each character's theme lives in its hood (rig.hood), so a custom hat
+// (rig.hat) can swap it out; rig.back holds back accessories. Trim parts marked neon() glow
+// while awakened (see setNeon).
+const SKIN = { lion: '#e8b98f', penguin: '#f5cd30', steve: '#c9986a', shark: '#f2c8a0', dummy: '#c9b48a' };
+function neon(m) { m.userData.neon = true; return m; }
+function r6(B, o) {
   const rig = {};
-  rig.legL = piv(B, 0.16, 0.8, 0); rig.legR = piv(B, -0.16, 0.8, 0);
+  rig.legL = piv(B, 0.2, 0.8, 0); rig.legR = piv(B, -0.2, 0.8, 0);
   for (const L of [rig.legL, rig.legR]) {
-    bx(L, 0.3, 0.6, 0.32, R, 0, -0.3, 0); bx(L, 0.34, 0.07, 0.36, G, 0, -0.58, 0);
-    bx(L, 0.36, 0.06, 0.38, W, 0, -0.64, 0); bx(L, 0.28, 0.14, 0.42, K, 0, -0.73, 0.05);
+    bx(L, 0.4, 0.62, 0.4, o.pants, 0, -0.31, 0);
+    bx(L, 0.4, 0.18, 0.4, o.shoes, 0, -0.71, 0);
+    if (o.band) neon(bx(L, 0.42, 0.06, 0.42, o.band, 0, -0.6, 0));
   }
   const T = rig.torso = piv(B, 0, 0.8, 0);
-  bx(T, 0.6, 0.68, 0.34, R, 0, 0.34, 0); bx(T, 0.62, 0.1, 0.36, G, 0, 0.06, 0);
-  bx(T, 0.16, 0.56, 0.02, G, 0, 0.36, 0.18); bx(T, 0.64, 0.08, 0.36, Rd, 0, 0.66, 0);
-  rig.armL = piv(T, 0.41, 0.62, 0); rig.armR = piv(T, -0.41, 0.62, 0);
-  for (const A of [rig.armL, rig.armR]) { bx(A, 0.22, 0.46, 0.24, R, 0, -0.2, 0); bx(A, 0.25, 0.07, 0.27, G, 0, -0.44, 0); bx(A, 0.18, 0.18, 0.2, S, 0, -0.56, 0); }
-  rig.head = piv(T, 0, 0.7, 0);
-  const H = piv(rig.head, 0, 0, 0.04); H.scale.setScalar(0.9);
-  bx(H, 0.92, 0.5, 0.82, R, 0, 0.36, 0); bx(H, 0.96, 0.12, 0.86, G, 0, 0.64, 0);
-  bx(H, 0.74, 0.12, 0.14, W, 0, 0.53, 0.44);
-  for (const s of [1, -1]) {
-    bx(H, 0.22, 0.2, 0.06, '#ffffff', s * 0.22, 0.4, 0.42); bx(H, 0.1, 0.12, 0.04, K, s * 0.2, 0.38, 0.455);
-    bx(H, 0.24, 0.06, 0.08, G, s * 0.22, 0.5, 0.43);
-    bx(H, 0.2, 0.22, 0.1, G, s * 0.44, 0.68, -0.12);
-    bx(H, 0.08, 0.4, 0.62, W, s * 0.49, 0.32, 0);
+  bx(T, 0.8, 0.8, 0.4, o.shirt, 0, 0.4, 0);
+  if (o.belt) neon(bx(T, 0.82, 0.09, 0.42, o.belt, 0, 0.06, 0));
+  rig.armL = piv(T, 0.6, 0.72, 0); rig.armR = piv(T, -0.6, 0.72, 0);
+  const sl = o.sleeve || 0.62;
+  for (const A of [rig.armL, rig.armR]) {
+    bx(A, 0.4, sl, 0.4, o.arms || o.shirt, 0, 0.08 - sl / 2, 0);
+    bx(A, 0.4, 0.8 - sl, 0.4, o.hands || o.skin, 0, 0.08 - sl - (0.8 - sl) / 2, 0);
+    if (o.cuff) neon(bx(A, 0.42, 0.06, 0.42, o.cuff, 0, 0.08 - sl + 0.03, 0));
   }
-  const horn = bx(H, 0.12, 0.26, 0.12, G, 0, 0.8, 0.28); horn.rotation.x = 0.4;
-  const mir = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, 0.03, 12), lam('#e8eef5', { emissive: '#3b4a5a' }));
-  mir.rotation.x = PI / 2; mir.position.set(0, 0.64, 0.445); H.add(mir);
-  bx(H, 0.38, 0.16, 0.16, '#ffd64a', 0, 0.24, 0.47); bx(H, 0.6, 0.05, 0.05, W, 0, 0.14, 0.45);
-  rig.jaw = piv(H, 0, 0.14, -0.2);
-  bx(rig.jaw, 0.84, 0.12, 0.7, R, 0, -0.06, 0.31); bx(rig.jaw, 0.6, 0.05, 0.05, W, 0, 0.02, 0.63); bx(rig.jaw, 0.62, 0.22, 0.08, W, 0, -0.2, 0.6);
-  rig.cape = piv(H, 0, 0.55, -0.38);
+  const H = rig.head = piv(T, 0, 0.8, 0);
+  const hm = bx(H, 0.52, 0.48, 0.48, o.skin, 0, 0.26, 0); if (BEVEL) hm.geometry = bevelG(0.52, 0.48, 0.48, 0.1);
+  rig.face = new THREE.Mesh(FACE.geo[o.face], FACE.mat); rig.face.position.set(0, 0.25, 0.243); rig.face.userData.noShadow = true; H.add(rig.face);
+  rig.faceKey = rig.baseFace = o.face;
+  rig.hood = piv(H); rig.hat = piv(H); rig.back = piv(T, 0, 0.42, -0.2);
+  return rig;
+}
+function buildLion(B) {
+  const R = '#d21f2b', Rd = '#9e1420', G = '#f4b52f', W = '#fff3dc', K = '#1c1518';
+  const rig = r6(B, { shirt: R, pants: Rd, shoes: K, skin: SKIN.lion, belt: G, cuff: G, band: G, face: 'determined' });
+  neon(bx(rig.torso, 0.14, 0.6, 0.02, G, 0, 0.42, 0.205));
+  // lion-dance head worn as a big hat: brow band, googly eyes, ears, horn and the little mirror
+  const D = rig.hood;
+  bx(D, 0.74, 0.36, 0.7, R, 0, 0.66, 0.02); neon(bx(D, 0.78, 0.08, 0.74, G, 0, 0.5, 0.02));
+  for (const s of [1, -1]) {
+    bx(D, 0.2, 0.15, 0.05, '#ffffff', s * 0.18, 0.68, 0.38); bx(D, 0.09, 0.09, 0.03, K, s * 0.16, 0.67, 0.41);
+    bx(D, 0.22, 0.05, 0.06, G, s * 0.18, 0.78, 0.38);
+    bx(D, 0.16, 0.18, 0.1, G, s * 0.32, 0.88, -0.12);
+    bx(D, 0.06, 0.3, 0.6, W, s * 0.4, 0.64, 0);
+  }
+  const horn = bx(D, 0.1, 0.22, 0.1, G, 0, 0.9, 0.22); horn.rotation.x = 0.4;
+  const mir = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 0.03, 12), lam('#e8eef5', { emissive: '#3b4a5a' }));
+  mir.rotation.x = PI / 2; mir.position.set(0, 0.62, 0.385); D.add(mir);
+  rig.jaw = piv(D, 0, 0.5, 0.3);   // the lion's lip flaps open on big hits
+  bx(rig.jaw, 0.62, 0.07, 0.12, R, 0, -0.01, 0.06); bx(rig.jaw, 0.64, 0.07, 0.04, W, 0, -0.06, 0.12);
+  rig.cape = piv(D, 0, 0.72, -0.34);
   bx(rig.cape, 0.86, 1.05, 0.04, R, 0, -0.5, 0); bx(rig.cape, 0.88, 0.08, 0.06, G, 0, -0.98, 0);
   bx(rig.cape, 0.87, 0.06, 0.05, G, 0, -0.3, 0); bx(rig.cape, 0.14, 0.9, 0.06, W, 0, -0.45, -0.01);
-  rig.ribbons = piv(T, 0, 0.5, 0); rig.ribbons.visible = false;
+  rig.ribbons = piv(rig.torso, 0, 0.5, 0); rig.ribbons.visible = false;
   for (let k = 0; k < 4; k++) { const p = piv(rig.ribbons); p.rotation.y = k * PI / 2; const r = bx(p, 1.7, 0.1, 0.04, k % 2 ? '#ff2d3a' : '#ffcf3d', 1.15, 0, 0); r.rotation.z = -0.25; }
   return rig;
 }
 function buildPenguin(B) {
   const K = '#1d2230', W = '#f5f6f0', O = '#ff9b21';
-  const rig = {};
-  rig.legL = piv(B, 0.22, 0.3, 0); rig.legR = piv(B, -0.22, 0.3, 0);
-  for (const L of [rig.legL, rig.legR]) { bx(L, 0.18, 0.22, 0.2, K, 0, -0.11, 0); bx(L, 0.3, 0.1, 0.44, O, 0, -0.25, 0.08); }
-  const T = rig.torso = piv(B, 0, 0.28, 0);
-  bx(T, 1.0, 1.1, 0.86, K, 0, 0.56, -0.02); bx(T, 1.08, 0.64, 0.8, K, 0, 0.42, -0.02);
-  bx(T, 0.82, 0.96, 0.08, W, 0, 0.5, 0.43); bx(T, 0.4, 0.12, 0.25, K, 0, 0.05, -0.5);
-  rig.armL = piv(T, 0.56, 0.96, 0); rig.armR = piv(T, -0.56, 0.96, 0);
-  bx(rig.armL, 0.12, 0.74, 0.34, K, 0.02, -0.35, 0); bx(rig.armR, 0.12, 0.74, 0.34, K, -0.02, -0.35, 0);
-  rig.head = piv(T, 0, 1.12, 0); const Hd = rig.head;
-  bx(Hd, 0.72, 0.56, 0.68, K, 0, 0.28, 0); bx(Hd, 0.52, 0.32, 0.06, W, 0, 0.22, 0.34);
-  for (const s of [1, -1]) {
-    bx(Hd, 0.13, 0.13, 0.04, '#ffffff', s * 0.15, 0.32, 0.37); bx(Hd, 0.07, 0.08, 0.03, '#111111', s * 0.15, 0.31, 0.395);
-    bx(Hd, 0.1, 0.05, 0.03, '#ffb3c1', s * 0.25, 0.17, 0.37);
-  }
-  bx(Hd, 0.24, 0.11, 0.34, O, 0, 0.18, 0.48); bx(Hd, 0.18, 0.06, 0.26, '#e07f12', 0, 0.11, 0.45);
-  rig.fish = piv(rig.armR, -0.02, -0.7, 0.1); rig.fish.visible = false;
+  const rig = r6(B, { shirt: K, pants: K, shoes: O, skin: SKIN.penguin, hands: K, face: 'smile', belt: '#2f6fb0', cuff: '#2f6fb0' });
+  bx(rig.torso, 0.56, 0.62, 0.02, W, 0, 0.42, 0.205);   // white belly
+  // penguin hood: open at the front so the face shows, beak and eyes on the brim
+  const D = rig.hood;
+  bx(D, 0.62, 0.1, 0.6, K, 0, 0.56, -0.01); bx(D, 0.62, 0.56, 0.08, K, 0, 0.27, -0.27);
+  for (const s of [1, -1]) bx(D, 0.06, 0.52, 0.6, K, s * 0.29, 0.27, -0.01);
+  for (const s of [1, -1]) { bx(D, 0.1, 0.1, 0.03, '#ffffff', s * 0.13, 0.57, 0.3); bx(D, 0.05, 0.05, 0.02, '#111111', s * 0.13, 0.57, 0.318); }
+  bx(D, 0.2, 0.08, 0.16, O, 0, 0.5, 0.34);
+  rig.fish = piv(rig.armR, 0, -0.72, 0.1); rig.fish.visible = false;
   bx(rig.fish, 0.3, 0.34, 1.35, '#8fc9e8', 0, 0, 0.6); bx(rig.fish, 0.31, 0.08, 1.25, '#d6f1ff', 0, 0.1, 0.6);
   bx(rig.fish, 0.08, 0.55, 0.28, '#8fc9e8', 0, 0, -0.15); bx(rig.fish, 0.32, 0.08, 0.08, '#123044', 0, 0.06, 1.1);
   bx(rig.fish, 0.42, 0.46, 1.5, null, 0, 0, 0.6, new THREE.MeshLambertMaterial({ color: '#dff6ff', transparent: true, opacity: 0.35 }));
@@ -1261,26 +1404,20 @@ function buildPenguin(B) {
 const bladeMat = shared(lam('#5ff0e0', { emissive: '#0d4a46' }));
 const bladeNeth = shared(lam('#4a3f52', { emissive: '#3d0f66' }));
 function buildSteve(B) {
-  const S = '#c9986a', Sh = '#19aeb0', Pn = '#3842a6', Hr = '#3f2a19', Eye = '#4a5fcf';
-  const NM = new THREE.MeshLambertMaterial({ color: '#3d3542', emissive: '#1e0833' });
-  const NT = new THREE.MeshLambertMaterial({ color: '#a855f7', emissive: '#6b21a8' });
-  const rig = { neth: [] };
+  const Sh = '#19aeb0', Pn = '#3842a6', Hr = '#3f2a19';
+  const rig = r6(B, { shirt: Sh, pants: Pn, shoes: '#5b5b62', skin: SKIN.steve, sleeve: 0.3, face: 'smug', belt: '#2b2b2b' });
+  rig.neth = [];
+  const NM = new THREE.MeshStandardMaterial({ color: '#3d3542', emissive: '#1e0833', roughness: 0.35, metalness: 0.6, envMap: rigEnv(), envMapIntensity: 1 });
+  const NT = new THREE.MeshStandardMaterial({ color: '#a855f7', emissive: '#6b21a8', roughness: 0.3, metalness: 0.2 });
   const N = (p, w, h, d, x, y, z, trim) => { const m = bx(p, w, h, d, null, x, y, z, trim ? NT : NM); m.visible = false; rig.neth.push(m); return m; };
-  rig.legL = piv(B, 0.125, 0.75, 0); rig.legR = piv(B, -0.125, 0.75, 0);
-  for (const L of [rig.legL, rig.legR]) {
-    bx(L, 0.25, 0.75, 0.25, Pn, 0, -0.375, 0); bx(L, 0.26, 0.12, 0.26, '#5b5b62', 0, -0.69, 0);
-    N(L, 0.29, 0.46, 0.29, 0, -0.22, 0); N(L, 0.3, 0.16, 0.3, 0, -0.68, 0);
-  }
-  const T = rig.torso = piv(B, 0, 0.75, 0);
-  bx(T, 0.5, 0.75, 0.25, Sh, 0, 0.375, 0);
-  N(T, 0.56, 0.8, 0.31, 0, 0.38, 0); N(T, 0.1, 0.5, 0.32, 0, 0.45, 0.005, true);
-  rig.armL = piv(T, 0.375, 0.7, 0); rig.armR = piv(T, -0.375, 0.7, 0);
-  for (const A of [rig.armL, rig.armR]) { bx(A, 0.25, 0.75, 0.25, S, 0, -0.3, 0); bx(A, 0.26, 0.3, 0.26, Sh, 0, -0.08, 0); N(A, 0.3, 0.34, 0.3, 0, -0.08, 0); }
-  rig.head = piv(T, 0, 0.75, 0); const Hd = rig.head;
-  bx(Hd, 0.5, 0.5, 0.5, S, 0, 0.25, 0); bx(Hd, 0.52, 0.12, 0.52, Hr, 0, 0.47, 0); bx(Hd, 0.52, 0.3, 0.06, Hr, 0, 0.32, -0.24);
-  for (const s of [1, -1]) { bx(Hd, 0.0625, 0.0625, 0.02, '#ffffff', s * 0.155, 0.22, 0.255); bx(Hd, 0.0625, 0.0625, 0.02, Eye, s * 0.095, 0.22, 0.255); }
-  bx(Hd, 0.125, 0.0625, 0.03, '#8a5a3a', 0, 0.16, 0.255); bx(Hd, 0.25, 0.0625, 0.02, '#6b3f26', 0, 0.09, 0.255);
-  N(Hd, 0.57, 0.24, 0.57, 0, 0.44, 0); N(Hd, 0.57, 0.08, 0.04, 0, 0.33, 0.27, true);
+  for (const L of [rig.legL, rig.legR]) { N(L, 0.44, 0.5, 0.44, 0, -0.27, 0); N(L, 0.44, 0.18, 0.44, 0, -0.71, 0); }
+  N(rig.torso, 0.86, 0.84, 0.46, 0, 0.41, 0); N(rig.torso, 0.12, 0.52, 0.02, 0, 0.44, 0.24, true);
+  for (const A of [rig.armL, rig.armR]) N(A, 0.44, 0.34, 0.44, 0, -0.07, 0);
+  N(rig.head, 0.58, 0.24, 0.56, 0, 0.47, 0); N(rig.head, 0.58, 0.07, 0.04, 0, 0.36, 0.27, true);
+  // blocky brown hair as the "hood"
+  const D = rig.hood;
+  bx(D, 0.56, 0.1, 0.52, Hr, 0, 0.51, 0); bx(D, 0.56, 0.32, 0.08, Hr, 0, 0.36, -0.23);
+  for (const s of [1, -1]) bx(D, 0.04, 0.16, 0.3, Hr, s * 0.27, 0.42, -0.08);
   rig.hand = piv(rig.armR, 0, -0.66, 0.04);
   rig.sword = piv(rig.hand); rig.sword.visible = false;
   bx(rig.sword, 0.06, 0.06, 0.28, '#6b4a2b'); bx(rig.sword, 0.3, 0.06, 0.07, '#2b2b2b', 0, 0, 0.16);
@@ -1300,51 +1437,86 @@ function buildSteve(B) {
 }
 function buildShark(B) {
   const G = '#7d8c9c', Gd = '#5d6b7b', W = '#eef1f3', K = '#11161c', M = '#b8505c';
-  const rig = { eyes: [] };
-  rig.legL = piv(B, 0.2, 0.7, 0); rig.legR = piv(B, -0.2, 0.7, 0);
-  for (const L of [rig.legL, rig.legR]) { bx(L, 0.28, 0.62, 0.3, G, 0, -0.31, 0); bx(L, 0.34, 0.1, 0.44, Gd, 0, -0.65, 0.06); }
-  const T = rig.torso = piv(B, 0, 0.7, 0);
-  bx(T, 0.82, 0.82, 0.62, G, 0, 0.41, 0); bx(T, 0.62, 0.7, 0.06, W, 0, 0.38, 0.32);
-  for (const s of [1, -1]) for (let k = 0; k < 3; k++) bx(T, 0.02, 0.3, 0.04, Gd, s * 0.415, 0.6, 0.14 - k * 0.1);
-  rig.armL = piv(T, 0.45, 0.66, 0); rig.armR = piv(T, -0.45, 0.66, 0);
-  for (const A of [rig.armL, rig.armR]) bx(A, 0.1, 0.62, 0.34, G, 0, -0.28, 0);
-  const shape = new THREE.Shape(); shape.moveTo(0, 0); shape.lineTo(0.62, 0); shape.lineTo(0.52, 0.5); shape.lineTo(0, 0);
+  const rig = r6(B, { shirt: G, pants: G, shoes: Gd, skin: SKIN.shark, hands: G, face: 'grin', belt: '#3d8fd6', cuff: '#3d8fd6' });
+  bx(rig.torso, 0.56, 0.62, 0.02, W, 0, 0.4, 0.205);
+  const shape = new THREE.Shape(); shape.moveTo(0, 0); shape.lineTo(0.5, 0); shape.lineTo(0.42, 0.42); shape.lineTo(0, 0);
   const fin = new THREE.Mesh(new THREE.ExtrudeGeometry(shape, { depth: 0.08, bevelEnabled: false }), lam(G));
-  fin.rotation.y = PI / 2; fin.position.set(-0.04, 0.8, 0.22); fin.castShadow = true; T.add(fin);
-  rig.head = piv(T, 0, 0.8, 0); const H = rig.head;
-  bx(H, 0.7, 0.36, 0.82, G, 0, 0.24, 0.16); bx(H, 0.52, 0.24, 0.32, G, 0, 0.27, 0.7); bx(H, 0.32, 0.14, 0.14, G, 0, 0.31, 0.9);
-  bx(H, 0.5, 0.03, 0.7, M, 0, 0.065, 0.42);
-  for (const s of [1, -1]) {
-    const em = new THREE.MeshLambertMaterial({ color: K, emissive: '#000000' });
-    rig.eyes.push(bx(H, 0.06, 0.1, 0.12, null, s * 0.355, 0.3, 0.44, em));
-  }
-  for (let k = -2; k <= 2; k++) bx(H, 0.06, 0.08, 0.05, W, k * 0.1, 0.03, 0.78);
-  for (const s of [1, -1]) for (let k = 0; k < 3; k++) bx(H, 0.05, 0.08, 0.06, W, s * 0.24, 0.03, 0.62 - k * 0.14);
-  rig.jaw = piv(H, 0, 0.06, -0.15);
-  bx(rig.jaw, 0.6, 0.1, 0.84, G, 0, -0.07, 0.42); bx(rig.jaw, 0.62, 0.04, 0.8, W, 0, -0.12, 0.42); bx(rig.jaw, 0.5, 0.03, 0.7, M, 0, -0.01, 0.42);
-  for (let k = -2; k <= 2; k++) bx(rig.jaw, 0.06, 0.08, 0.05, W, k * 0.1, 0.03, 0.8);
-  rig.tail = piv(T, 0, 0.18, -0.28);
-  bx(rig.tail, 0.34, 0.3, 0.6, G, 0, 0, -0.3); bx(rig.tail, 0.22, 0.2, 0.42, G, 0, 0.02, -0.76);
-  bx(rig.tail, 0.06, 0.6, 0.22, Gd, 0, 0.26, -1.0).rotation.x = -0.5;
-  bx(rig.tail, 0.06, 0.36, 0.18, Gd, 0, -0.14, -0.97).rotation.x = 0.6;
+  fin.rotation.y = PI / 2; fin.position.set(-0.04, 0.45, -0.2); fin.castShadow = true; rig.torso.add(fin);
+  // shark hood: the face peeks out of the open mouth
+  const D = rig.hood;
+  bx(D, 0.64, 0.1, 0.62, G, 0, 0.56, 0); bx(D, 0.64, 0.6, 0.08, G, 0, 0.27, -0.27);
+  for (const s of [1, -1]) bx(D, 0.06, 0.56, 0.62, G, s * 0.3, 0.27, 0);
+  bx(D, 0.5, 0.18, 0.3, G, 0, 0.6, 0.34); bx(D, 0.3, 0.12, 0.12, G, 0, 0.62, 0.52);
+  bx(D, 0.48, 0.02, 0.26, M, 0, 0.5, 0.33);
+  for (let k = -2; k <= 2; k++) bx(D, 0.06, 0.07, 0.04, W, k * 0.09, 0.47, 0.46);
+  rig.eyes = [];
+  for (const s of [1, -1]) rig.eyes.push(bx(D, 0.04, 0.09, 0.1, null, s * 0.255, 0.62, 0.36, new THREE.MeshLambertMaterial({ color: K, emissive: '#000000' })));
+  rig.jaw = piv(D, 0, 0.02, -0.15);
+  bx(rig.jaw, 0.6, 0.08, 0.6, G, 0, -0.03, 0.38); bx(rig.jaw, 0.5, 0.02, 0.5, M, 0, 0.02, 0.38);
+  for (let k = -2; k <= 2; k++) bx(rig.jaw, 0.06, 0.07, 0.04, W, k * 0.09, 0.05, 0.64);
+  rig.tail = piv(rig.torso, 0, 0.12, -0.2);
+  bx(rig.tail, 0.3, 0.26, 0.5, G, 0, 0, -0.25); bx(rig.tail, 0.2, 0.18, 0.36, G, 0, 0.02, -0.64);
+  bx(rig.tail, 0.06, 0.52, 0.2, Gd, 0, 0.22, -0.86).rotation.x = -0.5;
+  bx(rig.tail, 0.06, 0.32, 0.16, Gd, 0, -0.12, -0.84).rotation.x = 0.6;
+  return rig;
+}
+function buildDummy(B) {
+  const W = '#c9b48a', Wd = '#a48e63';
+  const rig = r6(B, { shirt: W, pants: W, shoes: Wd, skin: SKIN.dummy, face: 'dummy', band: Wd });
+  bx(rig.torso, 0.34, 0.34, 0.02, '#d9332b', 0, 0.42, 0.205); bx(rig.torso, 0.2, 0.2, 0.025, '#ffffff', 0, 0.42, 0.21); bx(rig.torso, 0.08, 0.08, 0.03, '#d9332b', 0, 0.42, 0.215);
   return rig;
 }
 
-function buildDummy(B) {
-  const W = '#c9b48a', Wd = '#a48e63', K = '#4a3b2a';
-  const rig = {};
-  rig.legL = piv(B, 0.15, 0.8, 0); rig.legR = piv(B, -0.15, 0.8, 0);
-  for (const L of [rig.legL, rig.legR]) { bx(L, 0.26, 0.8, 0.26, W, 0, -0.4, 0); bx(L, 0.28, 0.06, 0.28, Wd, 0, -0.45, 0); }
-  const T = rig.torso = piv(B, 0, 0.8, 0);
-  bx(T, 0.62, 0.72, 0.34, W, 0, 0.36, 0);
-  bx(T, 0.34, 0.34, 0.02, '#d9332b', 0, 0.4, 0.175); bx(T, 0.2, 0.2, 0.025, '#ffffff', 0, 0.4, 0.18); bx(T, 0.08, 0.08, 0.03, '#d9332b', 0, 0.4, 0.185);
-  rig.armL = piv(T, 0.42, 0.66, 0); rig.armR = piv(T, -0.42, 0.66, 0);
-  for (const A of [rig.armL, rig.armR]) bx(A, 0.22, 0.66, 0.24, W, 0, -0.3, 0);
-  rig.head = piv(T, 0, 0.72, 0); const H = rig.head;
-  bx(H, 0.5, 0.48, 0.48, W, 0, 0.24, 0);
-  for (const s of [1, -1]) { for (const r of [0.7, -0.7]) { const e = bx(H, 0.14, 0.03, 0.02, K, s * 0.12, 0.28, 0.245); e.rotation.z = r; } }
-  bx(H, 0.22, 0.03, 0.02, K, 0, 0.12, 0.245);
-  return rig;
+// ---- hats and back gear (customisable; built into rig.hat / rig.back) ----
+const HATS = {
+  auto: 'Character hood', none: 'Nothing', valk: 'Valkyrie helm', ninja: 'Ninja headband', crown: 'Crown', cap: 'Cap', tophat: 'Top hat',
+};
+const BACKS = { none: 'Nothing', katana: 'Katana', wings: 'Winged pack' };
+const FACES_UI = { auto: 'Character face', smile: 'Smile', smug: 'Smug', determined: 'Determined', grin: 'Grin', cool: 'Shades' };
+function buildHat(H, kind) {
+  if (kind === 'valk') {
+    const S = '#9eabba', Wg = '#ffffff';
+    bx(H, 0.56, 0.16, 0.52, S, 0, 0.55, 0); bx(H, 0.4, 0.08, 0.38, S, 0, 0.66, 0); bx(H, 0.58, 0.05, 0.54, '#ffcf3d', 0, 0.47, 0);
+    bx(H, 0.07, 0.17, 0.04, S, 0, 0.41, 0.27);
+    for (const s of [1, -1]) for (let i = 0; i < 3; i++) { const f = bx(H, 0.04, 0.46 - i * 0.1, 0.1, Wg, s * (0.3 + i * 0.012), 0.66 + i * 0.03, 0.06 - i * 0.11); f.rotation.x = -0.35 - i * 0.18; f.rotation.z = -s * 0.22; }
+  } else if (kind === 'ninja') {
+    bx(H, 0.55, 0.07, 0.51, '#c0262f', 0, 0.37, 0); bx(H, 0.14, 0.06, 0.02, '#c9ccd2', 0, 0.37, 0.26);
+    bx(H, 0.1, 0.1, 0.06, '#c0262f', 0, 0.37, -0.27);
+    for (const s of [1, -1]) { const t = bx(H, 0.06, 0.34, 0.02, '#c0262f', s * 0.07, 0.2, -0.29); t.rotation.z = s * 0.3; t.rotation.x = 0.25; }
+  } else if (kind === 'crown') {
+    const Gd = '#ffcf3d';
+    bx(H, 0.5, 0.1, 0.46, Gd, 0, 0.55, 0);
+    for (const [x, z] of [[0.2, 0.18], [-0.2, 0.18], [0.2, -0.18], [-0.2, -0.18], [0, 0.2], [0, -0.2]]) bx(H, 0.08, 0.12, 0.08, Gd, x, 0.66, z);
+    bx(H, 0.08, 0.08, 0.03, '#e0262f', 0, 0.56, 0.24);
+  } else if (kind === 'cap') {
+    bx(H, 0.56, 0.14, 0.52, '#d9332b', 0, 0.55, 0); bx(H, 0.44, 0.04, 0.24, '#d9332b', 0, 0.5, 0.34); bx(H, 0.08, 0.04, 0.08, '#ffffff', 0, 0.64, 0);
+  } else if (kind === 'tophat') {
+    bx(H, 0.66, 0.04, 0.64, '#1a1a20', 0, 0.52, 0); bx(H, 0.44, 0.42, 0.42, '#1a1a20', 0, 0.75, 0); bx(H, 0.45, 0.08, 0.43, '#c0262f', 0, 0.58, 0);
+  }
+}
+function buildBack(Bk, kind) {
+  if (kind === 'katana') {
+    const K = piv(Bk, 0, 0, -0.04); K.rotation.z = 0.75;
+    bx(K, 0.08, 0.9, 0.06, '#1c1c24', 0, -0.05, 0); bx(K, 0.16, 0.04, 0.12, '#ffcf3d', 0, 0.42, 0); bx(K, 0.06, 0.28, 0.06, '#c0262f', 0, 0.58, 0);
+  } else if (kind === 'wings') {
+    bx(Bk, 0.3, 0.36, 0.12, '#5d6b7b', 0, 0, -0.04);
+    for (const s of [1, -1]) for (let i = 0; i < 3; i++) { const f = bx(Bk, 0.5 - i * 0.1, 0.08, 0.04, '#ffffff', s * (0.36 + i * 0.04), 0.14 - i * 0.12, -0.08); f.rotation.z = s * (0.35 - i * 0.18); }
+  }
+}
+// avatar string: "hat|back|face" (sent to other players with each snapshot)
+function avatarOf() { const a = SETTINGS.avatar || {}; return [HATS[a.hat] ? a.hat : 'auto', BACKS[a.back] ? a.back : 'none', FACES_UI[a.face] ? a.face : 'auto'].join('|'); }
+const BOT_HATS = ['auto', 'auto', 'auto', 'valk', 'ninja', 'crown', 'cap', 'tophat'];
+function botAvatar() { return BOT_HATS[(Math.random() * BOT_HATS.length) | 0] + '|' + (Math.random() < 0.3 ? 'katana' : 'none') + '|auto'; }
+function applyAvatar(f, av) {
+  if (!f.rig.hood || f.av === av) return;
+  f.av = av;
+  const [hat, back, face] = String(av || '').split('|');
+  for (const G of [f.rig.hat, f.rig.back]) for (const c of G.children.slice()) { disposeTree(c); G.remove(c); }
+  f.rig.hood.visible = !HATS[hat] || hat === 'auto';
+  if (HATS[hat] && hat !== 'auto' && hat !== 'none') buildHat(f.rig.hat, hat);
+  if (BACKS[back] && back !== 'none') buildBack(f.rig.back, back);
+  if (f.merged) for (const G of [f.rig.hat, f.rig.back]) { mergeMeshes(G); G.traverse((m) => { m.layers.mask = f.body.layers.mask; if (m.isMesh) m.castShadow = true; }); }
+  f.rig.faceKey = FACES_UI[face] && face !== 'auto' ? face : f.rig.baseFace;
 }
 
 // Golden Lantern: supply-crate plinth, a slowly turning palace lantern and a light beam to the sky.
@@ -1435,8 +1607,11 @@ class Fighter {
     this.root = new THREE.Group();
     this.visual = piv(this.root, 0, 1, 0);
     this.body = piv(this.visual, 0, -1, 0);
+    BEVEL = !this.lantern;
     this.rig = this.def.build(this.body, this);
-    mergeMeshes(this.body);
+    BEVEL = false;
+    if (this.rig.hood) applyAvatar(this, o.av || (this.localKey === 'P' ? avatarOf() : this.ai ? botAvatar() : 'auto|none|auto'));
+    mergeMeshes(this.body); this.merged = true;
     this.pose = {}; this.tgt = {};
     for (const k of PARTS) if (this.rig[k]) { this.pose[k] = [0, 0, 0]; this.tgt[k] = [0, 0, 0]; }
     this.shield = new THREE.Mesh(shieldGeo, new THREE.MeshBasicMaterial({ color: '#8cc4ff', transparent: true, opacity: 0.32, side: THREE.DoubleSide, depthWrite: false }));
@@ -2750,7 +2925,7 @@ function sharkWave(f) {
 // =====================================================================
 const CHARS = {
   lion: {
-    name: '阿娟', han: true, short: 'Lion Dancer', roman: 'Ā Juān', title: 'The Lion Dancer', role: 'Momentum close-combat', color: '#e0262f', fx: 'lion', lieY: 0.36,
+    name: '阿娟', han: true, short: 'Lion Dancer', roman: 'Ā Juān', title: 'The Lion Dancer', role: 'Momentum close-combat', color: '#e0262f', fx: 'lion', lieY: 0.22,
     build: buildLion, rest: { cape: [0.22, 0, 0] },
     m1: [   // 4 hits (was 5): jab, jab, sweep, head swipe
       { anim: 'jabL', dmg: 3.5 }, { anim: 'jabR', dmg: 3.5 },
@@ -2777,8 +2952,8 @@ const CHARS = {
     },
   },
   penguin: {
-    name: 'Penguin', short: 'Penguin', roman: 'Tuxedo bruiser', title: 'Physics disruptor', role: 'Physics & crowd control', color: '#7fd4ff', fx: 'ice', lieY: 0.46,
-    build: buildPenguin, rest: { armL: [0, 0, 0.2], armR: [0, 0, -0.2] }, waddle: true,
+    name: 'Penguin', short: 'Penguin', roman: 'Tuxedo bruiser', title: 'Physics disruptor', role: 'Physics & crowd control', color: '#7fd4ff', fx: 'ice', lieY: 0.22,
+    build: buildPenguin, rest: { armL: [0, 0, 0.14], armR: [0, 0, -0.14] }, waddle: true,
     m1: [   // 4 hits (was 3): three tumbling flipper slaps, then a belly-bump that knocks back (no more pancake finisher)
       { anim: 'slapL', dmg: 4, side: 1, o: { tumble: 1, kb: 4.2 } },
       { anim: 'slapR', dmg: 4, side: -1, o: { tumble: -1, kb: 4.2 } },
@@ -2809,7 +2984,7 @@ const CHARS = {
     },
   },
   steve: {
-    name: 'Steve', short: 'Steve', roman: 'Minecraft Steve', title: 'Tactical weapon-switcher', role: 'Weapon switcher · jump crits', color: '#19aeb0', fx: 'voxel', lieY: 0.15,
+    name: 'Steve', short: 'Steve', roman: 'Minecraft Steve', title: 'Tactical weapon-switcher', role: 'Weapon switcher · jump crits', color: '#19aeb0', fx: 'voxel', lieY: 0.2,
     build: buildSteve, airCrit: true,
     m1: [
       { anim: 'jabR', dmg: 5 }, { anim: 'sword', dmg: 5, range: 2.7, sword: true },
@@ -2834,8 +3009,8 @@ const CHARS = {
     },
   },
   shark: {
-    name: 'Shark', short: 'Shark', roman: 'Great white', title: 'Rushdown brawler', role: 'Aggressive rushdown', color: '#3d8fd6', fx: 'water', lieY: 0.33,
-    build: buildShark, rest: { armL: [0, 0, 0.45], armR: [0, 0, -0.45], tail: [-0.15, 0, 0] },
+    name: 'Shark', short: 'Shark', roman: 'Great white', title: 'Rushdown brawler', role: 'Aggressive rushdown', color: '#3d8fd6', fx: 'water', lieY: 0.22,
+    build: buildShark, rest: { armL: [0, 0, 0.12], armR: [0, 0, -0.12], tail: [-0.15, 0, 0] },
     m1: [
       { anim: 'slapL', dmg: 4 }, { anim: 'slapR', dmg: 4 },
       { anim: 'tailspin', dmg: 6, arc: -1, range: 2.7 },
@@ -2857,7 +3032,7 @@ const CHARS = {
     },
   },
   dummy: {
-    name: 'Dummy', short: '', color: '#c9b48a', fx: 'dust', lieY: 0.15, build: buildDummy, rest: { armL: [0, 0, 0.25], armR: [0, 0, -0.25] },
+    name: 'Dummy', short: '', color: '#c9b48a', fx: 'dust', lieY: 0.2, build: buildDummy, rest: { armL: [0, 0, 0.25], armR: [0, 0, -0.25] },
     m1: [], moves: [], ai: [], ult: { name: '', start() {}, tick() {}, end() {} },
   },
   lantern: {
@@ -2957,6 +3132,13 @@ function applyVisual(f, fdt) {
   f.stars.visible = f.stun > 0.3 && f.ragdoll <= 0 && !f.held && !f.dead && f.flatten <= 0 && !f.action;
   if (f.stars.visible) f.stars.rotation.y += fdt * 6;
   f.ice.visible = f.frozen > 0;
+  const rg = f.rig;
+  if (rg.face) {
+    const fk = f.dead || f.ragdoll > 0 || f.flatten > 0 || f.stun > 0.25 ? 'hurt' : f.awaken > 0 ? 'awake' : rg.faceKey;
+    if (rg.faceNow !== fk) { rg.faceNow = fk; rg.face.geometry = FACE.geo[fk]; }
+    const nOn = f.awaken > 0;
+    if (f.neonOn !== nOn) { f.neonOn = nOn; setNeon(f, nOn); }
+  }
 }
 
 // =====================================================================
@@ -3155,7 +3337,8 @@ const store = {
   set(k, v) { try { localStorage.setItem('scbg.' + k, JSON.stringify(v)); } catch (e) { /* private mode: settings last for this visit */ } },
 };
 { const saved = store.get('binds'); if (saved) for (const k in saved) if (k in BIND && typeof saved[k] === 'string') BIND[k] = saved[k]; }
-const SETTINGS = Object.assign({ autoLock: true, bots: 'normal' }, store.get('settings') || {});
+const SETTINGS = Object.assign({ autoLock: true, bots: 'normal', studs: true, avatar: {} }, store.get('settings') || {});
+RIG_U.uStuds.value = SETTINGS.studs ? 1 : 0;
 const CODE2ACT = new Map();
 const ALT_KEYS = { ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right', Numpad1: 'move1', Numpad2: 'move2', Numpad3: 'move3', Numpad4: 'move4', ShiftRight: 'shift' };
 function reindexBinds() { CODE2ACT.clear(); for (const k in BIND) if (BIND[k]) CODE2ACT.set(BIND[k], k); }
@@ -3642,7 +3825,7 @@ function packF(f) {
   if (f.blocking) fl |= 1; if (f.rig.sword && f.rig.sword.visible) fl |= 4; if (f.rig.mace && f.rig.mace.visible) fl |= 8;
   if (f.rig.rod && f.rig.rod.visible) fl |= 16; if (f.rig.bow && f.rig.bow.visible) fl |= 32; if (f.rig.fish && f.rig.fish.visible) fl |= 64;
   if (f.rig.ribbons && f.rig.ribbons.visible) fl |= 128; if (f.invuln()) fl |= 256; if (f.dead) fl |= 512; if (f.stars.visible) fl |= 1024; if (f.frozen > 0) fl |= 2048;
-  return { i: f.id, n: f.name, c: f.key, p: [r2(f.pos.x), r2(f.pos.y), r2(f.pos.z)], y: r3(f.yaw), h: r1(f.hp), v: [r3(f.V.rx), r3(f.V.ry), r3(f.V.rz), r3(f.V.y), r3(f.V.sy), r3(f.V.sxz)], q, fl, aw: f.awaken > 0 ? 1 : 0 };
+  return { i: f.id, n: f.name, c: f.key, p: [r2(f.pos.x), r2(f.pos.y), r2(f.pos.z)], y: r3(f.yaw), h: r1(f.hp), v: [r3(f.V.rx), r3(f.V.ry), r3(f.V.rz), r3(f.V.y), r3(f.V.sy), r3(f.V.sxz)], q, fl, aw: f.awaken > 0 ? 1 : 0, av: f.av };
 }
 // ---- snapshots: each one carries the sender's clock; remote fighters are drawn NETI.delay in the past,
 // interpolated between the two snapshots around that moment (no more exponential chasing)
@@ -3658,7 +3841,8 @@ function applyState(e, ts) {
   if (!e || ownerOf(e.i) === NET.me || !CHARS[e.c]) return;
   let f = fighters.find((x) => x.id === e.i);
   if (f && f.key !== e.c) { f.dispose(); fighters.splice(fighters.indexOf(f), 1); f = null; }
-  if (!f) { f = new Fighter(e.c, { id: e.i, name: e.n, remote: true }); f.pos.set(e.p[0], e.p[1], e.p[2]); f.yaw = e.y; f.snaps = []; fighters.push(f); }
+  if (!f) { f = new Fighter(e.c, { id: e.i, name: e.n, remote: true, av: e.av }); f.pos.set(e.p[0], e.p[1], e.p[2]); f.yaw = e.y; f.snaps = []; fighters.push(f); }
+  else if (e.av && e.av !== f.av) applyAvatar(f, e.av);
   if (!f.snaps) f.snaps = [];
   const S = f.snaps;
   if (S.length && ts <= S[S.length - 1].ts) return;   // out of order / duplicate
@@ -4043,6 +4227,15 @@ function finishRebind(code) {
 $('#setBtn').addEventListener('click', (e) => { SFX.init(); openSettings(); e.currentTarget.blur(); });
 $('#setClose').addEventListener('click', () => openSettings(false));
 $('#optLock').addEventListener('change', (e) => { SETTINGS.autoLock = e.target.checked; store.set('settings', SETTINGS); });
+// avatar pickers: the choice is saved, applied to your fighter at once and sent to the room with your snapshots
+for (const [id, list, key] of [['#optHat', HATS, 'hat'], ['#optBack', BACKS, 'back'], ['#optFace', FACES_UI, 'face']]) {
+  const sel = $(id);
+  for (const k in list) { const op = document.createElement('option'); op.value = k; op.textContent = list[k]; sel.appendChild(op); }
+  sel.value = list[SETTINGS.avatar[key]] ? SETTINGS.avatar[key] : key === 'back' ? 'none' : 'auto';
+  sel.addEventListener('change', (e) => { SETTINGS.avatar[key] = e.target.value; store.set('settings', SETTINGS); if (player) applyAvatar(player, avatarOf()); e.target.blur(); });
+}
+$('#optStuds').checked = !!SETTINGS.studs;
+$('#optStuds').addEventListener('change', (e) => { SETTINGS.studs = e.target.checked; RIG_U.uStuds.value = SETTINGS.studs ? 1 : 0; store.set('settings', SETTINGS); });
 $('#optBots').addEventListener('change', (e) => { SETTINGS.bots = e.target.value; store.set('settings', SETTINGS); updateBotUI(); e.target.blur(); });
 $('#keysReset').addEventListener('click', () => { for (const [k, , d] of BIND_DEFS) BIND[k] = d; reindexBinds(); store.set('binds', BIND); refreshKeyLabels(); buildHelp(); buildKeyList(); });
 // HUD writes only touch the DOM when a value actually changes (no per-frame style / text churn)
@@ -4212,6 +4405,7 @@ function frame(t) {
     updateLock(fdt); animateLantern(fdt);
     updateCamera(fdt); updateHUD(fdt); updateEventChip(); updateNums(fdt); updateTags();
     netTick(fdt);
+    RIG_U.uTime.value = realClock % 1000;
     renderer.render(scene, camera);
   } catch (err) {
     NET.cap = false;
