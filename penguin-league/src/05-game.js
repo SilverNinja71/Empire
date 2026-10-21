@@ -3,7 +3,7 @@
 // =====================================================================
 const M = {
   cars: [], views: [], ball: new Ball(), pads: [], score: [0, 0], clock: 300, t: 0, state: 'idle', stateT: 0,
-  demo: false, mode: '1v1', cfg: null, player: null, kickoff: false, kickStart: 0, kickTaker: [null, null], coach: [null, null],
+  demo: false, online: false, mode: '1v1', cfg: null, player: null, kickoff: false, kickStart: 0, kickTaker: [null, null], coach: [null, null],
   preds: {}, hist: [], histI: 0, overtime: false, otTime: 0, clockRun: false, ballHidden: false, touchSerial: 0, lastTouch: null,
   touches: [], tick: 0, slowmo: 0, zeroWait: false, teamLevel: ['normal', 'normal'], paused: false, excite: 0, levels: [], lastCount: 0, dutyT: [-99, -99],
   respawn(c) {
@@ -16,14 +16,10 @@ const M = {
     if (v.demolished || M.state !== 'play') return;
     v.demolished = true; v.respawnT = 3; v.boost = 0;
     a.stat.demos++; addScore(a, 25, 'DEMOLITION');
-    puffBurst(v.p, 22, 0x2b3050, 9, 0.7); puffBurst(v.p, 14, 0xffffff, 7, 0.6);
-    FX.confetti(v.p, 40, [0x2b3050, 0xffffff, 0xffa41b], 12);
-    FX.burst('POOF!', _gv.copy(v.p).add(UP), 4.2, '#ffffff', TEAM_CSS[a.team]);
-    if (!M.demo) feed(`${tn(a)} demolished ${tn(v)}`);
-    if (nearPlayer(v.p, 40)) { Sfx.demo(); CAM.shake = Math.max(CAM.shake, v === M.player || a === M.player ? 0.9 : 0.4); }
-    if (v === M.player) banner('DEMOLISHED', 'Respawning…', 'pink', 1.6);
+    demoFx(v, a); netEvent('demo', ci(v), ci(a));
   },
   onPickup(c, p) {
+    netEvent('pick', M.pads.indexOf(p), ci(c));
     if (!p.big) { if (c === M.player) Sfx.pickup(false); puffBurst(_gv.set(p.x, 0.5, p.z), 4, 0xffe066, 3, 0.25); return; }
     // ice crystal: shatter into icy glints + a frost ring; the speed burst itself is physics
     if (c === M.player) { Sfx.crystal(); CAM.shake = Math.max(CAM.shake, 0.25); }
@@ -37,11 +33,43 @@ for (let i = 0; i < 90; i++) M.hist.push({ p: new V3(), v: new V3(), w: new V3()
 const _gv = new V3(), _preP = new V3(), _preV = new V3(), _preW = new V3();
 const tn = (c) => `<span class="${c.team ? 'o' : 'b'}">${esc(c.name)}</span>`;
 const nearPlayer = (p, d) => !M.player || M.player.p.distanceTo(p) < d;
+// online: a car's index in M.cars (the same on every computer), and an event for the friends' screens
+const ci = (c) => M.cars.indexOf(c);
+function netEvent(...e) { if (M.online && Online.role === 'host') Online.ev.push(e); }
 
 function addScore(c, pts, label) {
   if (M.demo) return;
   c.stat.score += pts;
   if (c === M.player) toast(`+${pts}`, label);
+  else if (c.remote) netEvent('score', ci(c), pts, label);
+}
+// ---- what everyone sees when something happens (the host runs these after the game logic; friends run them
+// from the host's events, so each screen gets its own "You scored!" / "DEMOLISHED" and effects)
+function demoFx(v, a) {
+  puffBurst(v.p, 22, 0x2b3050, 9, 0.7); puffBurst(v.p, 14, 0xffffff, 7, 0.6);
+  FX.confetti(v.p, 40, [0x2b3050, 0xffffff, 0xffa41b], 12);
+  FX.burst('POOF!', _gv.copy(v.p).add(UP), 4.2, '#ffffff', TEAM_CSS[a.team]);
+  if (!M.demo) feed(`${tn(a)} demolished ${tn(v)}`);
+  if (nearPlayer(v.p, 40)) { Sfx.demo(); CAM.shake = Math.max(CAM.shake, v === M.player || a === M.player ? 0.9 : 0.4); }
+  if (v === M.player) banner('DEMOLISHED', 'Respawning…', 'pink', 1.6);
+}
+function saveFx(c, at) {
+  feed(`${tn(c)} made a save`); FX.burst('SAVE!', _gv.copy(at).add(UP), 3.6, '#72dc4e', '#ffffff');
+}
+function touchFx(c, power, charged, curved, point) {
+  if (power > 2.5 && nearPlayer(point, 50)) Sfx.hit(power);
+  if (charged > 0) {
+    // charged shot: frost ring + a POWER! or CURVE! sticker (curve when the shooter was steering at contact)
+    FX.shock(_gv.copy(point), 0x5fdcff, 5 + charged * 5);
+    FX.burst(curved ? 'CURVE!' : 'POWER!', _gv.copy(point).addScaledVector(UP, 1.1), 2.6 + charged * 1.2, '#c8f6ff', curved ? '#8d5bff' : '#2fb8ff');
+    puffBurst(point, 8, 0xc8f6ff, 6, 0.32);
+    if (nearPlayer(point, 50)) Sfx.power(charged);
+    if (c === M.player) CAM.shake = Math.max(CAM.shake, 0.5);
+  } else if (power > 17) {
+    FX.burst(pick(['POW!', 'BONK!', 'WHAM!', 'SMACK!']), _gv.copy(point).addScaledVector(UP, 0.8), 2.4 + power * 0.04);
+    puffBurst(point, 6, 0xffffff, 5, 0.3);
+    if (c === M.player) CAM.shake = Math.max(CAM.shake, 0.35);
+  }
 }
 
 // ----------------------------------------------------------- match setup
@@ -52,12 +80,12 @@ function clearMatch() {
 }
 function startMatch(cfg) {
   clearMatch();
-  M.cfg = cfg; M.demo = !!cfg.demo; M.mode = cfg.mode;
+  M.cfg = cfg; M.demo = !!cfg.demo; M.mode = cfg.mode; M.online = !!cfg.online;
   const kind = cfg.mode === '5v5' ? 'large' : 'standard';
   const rebuild = A.kind !== kind || !arenaGroup;
   setArena(kind);
   M.pads = makePads();
-  if (rebuild) buildArena(); else { for (const pv of padViews) scene.remove(pv.g); padViews = M.pads.map(makePadView); }
+  if (rebuild) buildArena(); else padViews = M.pads.map(makePadView);
   const n = MODES[cfg.mode].n;
   const names = shuffle(BOT_NAMES);
   let ni = 0;
@@ -66,7 +94,23 @@ function startMatch(cfg) {
     return { hat: pick(hatPool), skin: pick(SKINS).id, trail: 'puff' };
   };
   M.teamLevel = [cfg.mate, cfg.opp];
-  for (const team of [0, 1]) {
+  if (cfg.roster) {
+    // online: every computer builds the same penguins in the same order from the host's list. Everyone drives a
+    // stock penguin; friends' penguins follow the controls they send, and only the host runs the bots
+    for (const s of cfg.roster) {
+      let car;
+      if (s.human) {
+        car = new Penguin(s.team, s.name, { ...STOCK }, { cos: s.cos });
+        if (s.id === cfg.me) M.player = car; else car.remote = s.id;
+      } else {
+        car = new Penguin(s.team, s.name, { ...STOCK }, { bot: true, level: s.level, cos: s.cos });
+        if (!cfg.guest) car.bot = new Bot(car, s.level);
+      }
+      M.cars.push(car);
+      M.views.push(new PenguinView(car));
+    }
+  }
+  else for (const team of [0, 1]) {
     for (let i = 0; i < n; i++) {
       let car;
       if (team === 0 && i === 0 && !M.demo) {
@@ -157,8 +201,9 @@ function simTick() {
   if (M.tick % 3 === 0) updatePreds();
   if (M.tick % 12 === 0) coachUpdate(M);
   if (M.kickoff && M.t - M.kickStart > 4.5) M.kickoff = false;
-  // controls
+  // controls (online: friends' penguins use the controls they sent)
   if (M.player) readPlayerInput(M.player);
+  if (M.online) Online.applyInputs();
   for (const c of M.cars) if (c.bot) c.bot.update(DT, M);
   for (const c of M.cars) { stepPenguin(c, DT, M); handleCarEvents(c); }
   // ball
@@ -205,10 +250,14 @@ function simTick() {
 function handleCarEvents(c) {
   if (!c.events.length) return;
   for (const e of c.events) {
-    if (c === M.player) { if (e === 'jump') Sfx.jump(); else if (e === 'flip') Sfx.flip(); }
-    if (e === 'flip' && nearPlayer(c.p, 30)) puffBurst(c.p, 4, 0xffffff, 2.5, 0.35);
+    carEventFx(c, e);
+    if (c.remote) netEvent('ce', ci(c), e === 'flip' ? 1 : 0);
   }
   c.events.length = 0;
+}
+function carEventFx(c, e) {
+  if (c === M.player) { if (e === 'jump') Sfx.jump(); else if (e === 'flip') Sfx.flip(); }
+  if (e === 'flip' && nearPlayer(c.p, 30)) puffBurst(c.p, 4, 0xffffff, 2.5, 0.35);
 }
 function onTouch(c, hit) {
   const M_ = M;
@@ -221,25 +270,14 @@ function onTouch(c, hit) {
       const own = c.team === 0 ? -1 : 1;
       const before = predictGoal(_preP, _preV, 2.6, _preW);
       const after = predictGoal(M_.ball.p, M_.ball.v, 4, M_.ball.w);
-      if (before === own && after !== own) { c.stat.saves++; addScore(c, 50, 'SAVE'); feed(`${tn(c)} made a save`); FX.burst('SAVE!', _gv.copy(M_.ball.p).add(UP), 3.6, '#72dc4e', '#ffffff'); }
+      if (before === own && after !== own) { c.stat.saves++; addScore(c, 50, 'SAVE'); saveFx(c, M_.ball.p); netEvent('save', ci(c)); }
       else if (after === -own && before !== -own) { c.stat.shots++; addScore(c, 20, 'SHOT ON GOAL'); }
     }
   }
   c.lastTouchT = M_.t;
-  if (hit.power > 2.5 && nearPlayer(hit.point, 50)) Sfx.hit(hit.power);
-  if (hit.charged > 0) {
-    // charged shot: frost ring + a POWER! or CURVE! sticker (curve when the shooter was steering at contact)
-    const curved = Math.abs(c.ctrl.steer) > 0.3;
-    FX.shock(_gv.copy(hit.point), 0x5fdcff, 5 + hit.charged * 5);
-    FX.burst(curved ? 'CURVE!' : 'POWER!', _gv.copy(hit.point).addScaledVector(UP, 1.1), 2.6 + hit.charged * 1.2, '#c8f6ff', curved ? '#8d5bff' : '#2fb8ff');
-    puffBurst(hit.point, 8, 0xc8f6ff, 6, 0.32);
-    if (nearPlayer(hit.point, 50)) Sfx.power(hit.charged);
-    if (c === M_.player) CAM.shake = Math.max(CAM.shake, 0.5);
-  } else if (hit.power > 17) {
-    FX.burst(pick(['POW!', 'BONK!', 'WHAM!', 'SMACK!']), _gv.copy(hit.point).addScaledVector(UP, 0.8), 2.4 + hit.power * 0.04);
-    puffBurst(hit.point, 6, 0xffffff, 5, 0.3);
-    if (c === M_.player) CAM.shake = Math.max(CAM.shake, 0.35);
-  }
+  const curved = Math.abs(c.ctrl.steer) > 0.3;
+  touchFx(c, hit.power, hit.charged, curved, hit.point);
+  if (hit.power > 2.5 || hit.charged > 0) netEvent('touch', ci(c), +hit.power.toFixed(2), +hit.charged.toFixed(2), curved ? 1 : 0, +hit.point.x.toFixed(2), +hit.point.y.toFixed(2), +hit.point.z.toFixed(2));
 }
 function onGoal(team) {
   const b = M.ball;
@@ -254,11 +292,6 @@ function onGoal(team) {
   }
   if (scorer && !M.demo) { scorer.stat.goals++; addScore(scorer, 100, 'GOAL'); }
   if (assist && !M.demo) { assist.stat.assists++; addScore(assist, 50, 'ASSIST'); }
-  const col = TEAM_HEX[team];
-  FX.confetti(b.p, 260, [col, 0xffd23f, 0xff5fa8, 0xffffff, 0x72dc4e, 0x8d5bff], 22);
-  FX.shock(b.p, col, 16); FX.shock(_gv.copy(b.p).add(UP), 0xffffff, 10);
-  puffBurst(b.p, 30, 0xffffff, 12, 1.0); puffBurst(b.p, 20, col, 10, 0.9);
-  FX.burst('GOAL!', _gv.copy(b.p).addScaledVector(UP, 3), 9, team ? '#ffb15c' : '#7fd0ff', '#ffd23f');
   for (const c of M.cars) {
     if (c.demolished) continue;
     const d = c.p.distanceTo(b.p);
@@ -266,13 +299,23 @@ function onGoal(team) {
   }
   M.state = 'goal'; M.excite = 1;
   if (M.demo) { M.ballHidden = true; M.stateT = 1.5; }
-  else {
+  else M.stateT = save.settings.reducedMotion ? 1.6 : GOAL_HL.dur * GOAL_TS + 0.45;
+  goalFx(team, scorer, assist);
+  netEvent('goal', team, scorer ? ci(scorer) : -1, assist ? ci(assist) : -1);
+}
+function goalFx(team, scorer, assist) {
+  const b = M.ball;
+  const col = TEAM_HEX[team];
+  FX.confetti(b.p, 260, [col, 0xffd23f, 0xff5fa8, 0xffffff, 0x72dc4e, 0x8d5bff], 22);
+  FX.shock(b.p, col, 16); FX.shock(_gv.copy(b.p).add(UP), 0xffffff, 10);
+  puffBurst(b.p, 30, 0xffffff, 12, 1.0); puffBurst(b.p, 20, col, 10, 0.9);
+  FX.burst('GOAL!', _gv.copy(b.p).addScaledVector(UP, 3), 9, team ? '#ffb15c' : '#7fd0ff', '#ffd23f');
+  M.excite = 1;
+  if (!M.demo) {
     // slow-motion highlight: GOAL_HL.dur real seconds at GOAL_TS speed with the ball still rippling the net
     // while the camera zooms toward it and the scorer, then a short beat and the kickoff reset
     // Reduced motion: no slow motion, no camera swoop, no shake and no white flash, just a short pause
-    if (save.settings.reducedMotion) M.stateT = 1.6;
-    else {
-      M.stateT = GOAL_HL.dur * GOAL_TS + 0.45;
+    if (!save.settings.reducedMotion) {
       M.slowmo = GOAL_HL.dur; CAM.shake = 1; flash();
       startHighlight(team, scorer); cine(true);
     }
@@ -286,14 +329,21 @@ function onGoal(team) {
 function startOvertime() {
   M.overtime = true; M.otTime = 0;
   M.state = 'otintro'; M.stateT = 2.4;
-  banner('OVERTIME', 'Next goal wins', 'pink', 2.2); Sfx.whistle();
+  otFx(); netEvent('ot');
 }
+function otFx() { banner('OVERTIME', 'Next goal wins', 'pink', 2.2); Sfx.whistle(); }
 function endMatch() {
-  endHighlight();
   M.state = 'over'; M.ballHidden = M.ballHidden || false;
+  if (M.online) Online.sendStats();
+  endFx(); netEvent('end');
+}
+// the player's own team decides victory (online friends can be on orange)
+const myWin = () => { const t = M.player ? M.player.team : 0; return M.score[t] > M.score[1 - t]; };
+function endFx() {
+  endHighlight();
   Sfx.whistle();
-  const win = M.score[0] > M.score[1];
-  banner(win ? 'VICTORY!' : 'DEFEAT', `${M.score[0]} – ${M.score[1]}`, win ? 'yellow' : 'pink', 2.4);
+  const win = myWin(), t = M.player ? M.player.team : 0;
+  banner(win ? 'VICTORY!' : M.score[0] === M.score[1] ? 'DRAW' : 'DEFEAT', `${M.score[t]} – ${M.score[1 - t]}`, win ? 'yellow' : 'pink', 2.4);
   if (win) FX.confetti(_gv.set(M.player.p.x, 3, M.player.p.z), 200, [0xffd23f, 0xff5fa8, 0x2f8cff, 0xffffff], 16);
   setTimeout(() => UI.results(), 2300);
 }
@@ -311,7 +361,8 @@ const LATCH = { jump: { n: 0, out: false }, boost: { n: 0, out: false }, slide: 
 const KEY_ACTION = { Space: 'jump', ShiftLeft: 'boost', ShiftRight: 'boost', KeyX: 'slide', KeyF: 'charge' };
 const PAD_ACTION = { 0: 'jump', 1: 'boost', 2: 'slide', 5: 'charge' };   // A, B, X, RB
 const playing = () => inMatch() && !M.paused;
-function latchPress(a) { if (playing()) LATCH[a].n++; }
+const PRESSES = { jump: 0, boost: 0, slide: 0, charge: 0 };   // every press ever (online friends send this count)
+function latchPress(a) { if (playing()) { LATCH[a].n++; PRESSES[a]++; } }
 function clearInput() {
   KEYS.clear(); mouse.l = mouse.r = false;
   for (const a of ACTIONS) { LATCH[a].n = 0; LATCH[a].out = false; }
@@ -340,7 +391,7 @@ addEventListener('keydown', (e) => {
 });
 addEventListener('keyup', (e) => { KEYS.delete(e.code); if (e.code === 'Tab') HUD.scoreboard(false); });
 // switching to another window or tab pauses a match (and drops any held keys)
-function autoPause() { if (inMatch() && !M.paused && M.state !== 'over') UI.togglePause(); }
+function autoPause() { if (inMatch() && !M.online && !M.paused && M.state !== 'over') UI.togglePause(); }   // an online match can't pause for everyone
 addEventListener('blur', () => { clearInput(); autoPause(); });
 document.addEventListener('visibilitychange', () => { if (document.hidden) { clearInput(); autoPause(); } });
 canvas.addEventListener('mousedown', (e) => {
@@ -373,7 +424,13 @@ function pollPad() {
 const padOn = (i) => PAD.prev[i] === 1;
 const dz = (v) => (Math.abs(v) < 0.15 ? 0 : (v - Math.sign(v) * 0.15) / 0.85);
 function readPlayerInput(c) {
-  const k = c.ctrl, K = (code) => KEYS.has(code);
+  const k = c.ctrl;
+  gatherInput(k);
+  k.jump = latched('jump', k.jump); k.boost = latched('boost', k.boost); k.slide = latched('slide', k.slide); k.charge = latched('charge', k.charge);
+}
+// the held state of every control right now (no latching)
+function gatherInput(k) {
+  const K = (code) => KEYS.has(code);
   let thr = (K('KeyW') || K('ArrowUp') ? 1 : 0) - (K('KeyS') || K('ArrowDown') ? 1 : 0);
   let st = (K('KeyD') || K('ArrowRight') ? 1 : 0) - (K('KeyA') || K('ArrowLeft') ? 1 : 0);
   const roll = 0;   // rolling is not possible
@@ -387,7 +444,7 @@ function readPlayerInput(c) {
   if (touch.jx || touch.jy) { st += touch.jx; thr += clamp(-touch.jy * 1.5, -1, 1); pitch += -touch.jy; }
   jump = jump || touch.jump; boost = boost || touch.boost; slide = slide || touch.slide; charge = charge || touch.charge;
   k.throttle = clamp(thr, -1, 1); k.steer = clamp(st, -1, 1); k.pitch = clamp(pitch, -1, 1); k.roll = clamp(roll, -1, 1);
-  k.jump = latched('jump', jump); k.boost = latched('boost', boost); k.slide = latched('slide', slide); k.charge = latched('charge', charge);
+  k.jump = jump; k.boost = boost; k.slide = slide; k.charge = charge;
 }
 function toggleBallCam() { save.settings.ballCam = !save.settings.ballCam; persist(); HUD.camChip(); }
 // touch controls
@@ -533,15 +590,19 @@ function frame(now) {
 function tick(dt) {
   if (UI.showroomOn()) { renderShowroom(dt); Sfx.loops(false, 0, 0); return; }
   const running = M.state !== 'idle' && !M.paused;
-  if (running) {
+  // online friends don't simulate: they draw the host's match from its updates (and send their controls)
+  const guest = M.online && Online.role === 'guest';
+  if (guest && running) Online.guestFrame(dt);
+  else if (running) {
     let ts = 1;
     if (M.slowmo > 0) { M.slowmo -= dt; ts = GOAL_TS; }
     acc += dt * ts;
     // catch up after a slow frame (up to MAX_CATCHUP ticks, ~0.25 s), then drop the rest instead of spiralling
     let n = 0; while (acc >= DT && n < MAX_CATCHUP) { simTick(); acc -= DT; n++; }
     if (n >= MAX_CATCHUP) acc = 0;
+    if (M.online) Online.hostFrame();
   }
-  const alpha = clamp(acc / DT, 0, 1);
+  const alpha = guest ? 1 : clamp(acc / DT, 0, 1);
   const fdt = running ? dt * (M.slowmo > 0 ? GOAL_TS : 1) : 0;
   for (const v of M.views) v.update(fdt, alpha, M.ball.p, !M.demo && v.car !== M.player);
   ballView.update(fdt, alpha, M.ball, M.ballHidden);

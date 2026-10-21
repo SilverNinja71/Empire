@@ -384,6 +384,21 @@ body.touch #hud-left{bottom:calc(192px + env(safe-area-inset-bottom,0px))}
   .pop,.toast,.feed-item,.confirm,.pill.bump{animation-duration:.01s}
   .btn,.opt,.chip,.item{transition:none}
 }
+
+/* Play with friends: lobby */
+.friends-btn{margin-top:10px;font-size:20px;padding:10px 26px}
+.net-input{font:600 18px var(--font-body);color:var(--ink);background:#fff;border:3px solid var(--ink);border-radius:12px;padding:8px 12px;min-width:0;width:min(320px,100%)}
+.net-input.code{width:9ch;text-transform:uppercase;letter-spacing:.2em;font-family:var(--font-display);font-size:22px}
+.net-input.link{flex:1;width:auto;font-size:14px}
+.net-join{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.net-code{font:400 clamp(40px,9vmin,64px)/1 var(--font-display);letter-spacing:.18em;color:var(--sun);text-shadow:var(--stroke);margin:4px 0 12px}
+.net-status{background:#fff;border:3px solid var(--ink);border-radius:12px;padding:8px 12px;font-weight:600;margin:0 0 12px}
+.net-teams{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px}
+.net-team{border:3px solid var(--ink);border-radius:14px;padding:8px 12px;background:#fff}
+.net-team.t0{box-shadow:inset 0 6px 0 var(--blue)}.net-team.t1{box-shadow:inset 0 6px 0 var(--orange)}
+.net-team h4{margin:6px 0;font-family:var(--font-display);font-weight:400;font-size:18px}
+.net-p{font-weight:600;font-size:17px;padding:3px 0}.net-p.me{color:var(--blue-deep)}.net-p.bot{color:var(--muted);font-size:14px;font-weight:500}
+.net-p .tag{font-size:12px;padding:1px 6px;border-radius:6px;background:var(--sun);color:var(--ink)}.net-p .tag.you{background:var(--lime)}
 </style>
 
 <svg class="svg-defs" aria-hidden="true" focusable="false"><defs>
@@ -446,6 +461,7 @@ body.touch #hud-left{bottom:calc(192px + env(safe-area-inset-bottom,0px))}
     <div id="menu-bg"><div class="snow s1"></div><div class="snow s2"></div></div>
     <section class="screen" id="scr-title" hidden></section>
     <section class="screen" id="scr-play" hidden></section>
+    <section class="screen" id="scr-online" hidden></section>
     <section class="screen see-through" id="scr-garage" hidden></section>
     <section class="screen see-through" id="scr-locker" hidden></section>
     <section class="screen" id="scr-howto" hidden></section>
@@ -460,4 +476,6 @@ body.touch #hud-left{bottom:calc(192px + env(safe-area-inset-bottom,0px))}
   </div>
 </div>
 
+<!-- PeerJS: browser-to-browser connections for online matches with friends (rooms + invite links) -->
+<script defer src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
 <script type="module">

@@ -91,6 +91,7 @@ const DEFAULT_SAVE = {
   },
   career: { played: 0, wins: 0, goals: 0, godWins: 0 },
   last: { mode: '1v1', opp: 'normal', mate: 'normal', len: 300, fair: false },
+  netName: '',   // name shown to friends online ('' = the shared account's username)
 };
 function deepMerge(base, src) {
   for (const k in src) {
