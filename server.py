@@ -6,7 +6,7 @@ Serves every game from one origin (so they share one account) and opens the hub 
 Each game is its own repo. Clone them next to this one, like they sit on GitHub Pages:
     some-folder/Empire/          <- this hub (and shared/accounts.js)
     some-folder/mace-pvp/
-    some-folder/penguin-league/
+    some-folder/Penguin-League/
     ...
 This server serves some-folder, so the hub is at /Empire/ and each game at /<repo>/.
 
@@ -36,7 +36,7 @@ HUB = os.path.basename(HUB_DIR) + "/"
 DIRECTORY = os.path.dirname(HUB_DIR)  # the folder holding the hub and every game repo
 
 GAMES = [
-    ("Penguin League", "penguin-league/", "https://github.com/SilverNinja71/penguin-league.git"),
+    ("Penguin League", "Penguin-League/", "https://github.com/SilverNinja71/Penguin-League.git"),
     ("Spear-Mace PVP", "mace-pvp/", "https://github.com/SilverNinja71/mace-pvp.git"),
     ("Penguin Life", "Penguin-Life/", "https://github.com/SilverNinja71/Penguin-Life.git"),
     ("Penguintrack", "Penguin-Track/", "https://github.com/SilverNinja71/Penguin-Track.git"),
