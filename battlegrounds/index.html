@@ -324,6 +324,7 @@ body.touch .mini{height:52px}
       <span style="font-size:11px;color:var(--dim);font-weight:600" id="roomRole">Code</span>
       <span id="roomCode">-----</span>
       <button type="button" class="sbtn" id="copyBtn">Copy</button>
+      <button type="button" class="sbtn pri" id="inviteBtn" title="Copy a link that drops a friend straight into this arena">Invite link</button>
       <button type="button" class="sbtn" id="leaveBtn">Leave</button>
     </div>
     <div class="row" id="botRow" hidden>
@@ -646,7 +647,7 @@ const SFX = (() => {
     os.connect(g); g.connect(master); os.start(t); os.stop(t + dur + 0.05);
   }
   return {
-    init, toggle() { muted = !muted; return muted; },
+    init, toggle() { muted = !muted; return muted; }, setMuted(m) { muted = !!m; return muted; },
     swing() { nz(0.12, { type: 'bandpass', f: 500, f2: 2200, q: 0.9, vol: 0.1 }); },
     hit() { nz(0.09, { f: 2200, vol: 0.3 }); tn(160, 0.1, { f2: 70, vol: 0.35 }); },
     heavy() { nz(0.25, { f: 900, f2: 200, vol: 0.45 }); tn(110, 0.25, { f2: 40, vol: 0.5 }); },
@@ -3874,11 +3875,12 @@ function leaveRoom(msg) {
 }
 function netFail() { leaveRoom(); roomMsg(FAIL_MSG); setRoomBusyButtons(false); }
 function setRoomBusyButtons(b) { $('#hostBtn').disabled = b; $('#joinBtn').disabled = b; }
-async function hostArena() {
+// `want`: open the arena on exactly this code (a party leader's invite link) instead of a random one
+async function hostArena(want) {
   if (online()) return;
   roomMsg(''); setRoomBusy('Starting server…'); setRoomBusyButtons(true);
   try { await loadPeer(); } catch (e) { return netFail(); }
-  const code = randCode(); let peer;
+  const code = want || randCode(); let peer;
   try { peer = new window.Peer('scbg-' + code.toLowerCase(), { debug: 0 }); } catch (e) { return netFail(); }
   NET.peer = peer;
   const to = setTimeout(() => { if (NET.mode === 'offline') netFail(); }, 9000);
@@ -3923,6 +3925,13 @@ $('#copyBtn').addEventListener('click', (e) => {
   try { navigator.clipboard.writeText(NET.code).then(() => { btn.textContent = 'Copied'; setTimeout(() => (btn.textContent = 'Copy'), 1500); }, () => selectCode()); } catch (err) { selectCode(); }
 });
 function selectCode() { const r = document.createRange(); r.selectNodeContents($('#roomCode')); const s = getSelection(); s.removeAllRanges(); s.addRange(r); }
+// invite links: ?room=CODE joins that arena on load; ?room=CODE&host=1 hosts it on that exact code
+const inviteUrl = (code) => location.origin + location.pathname + '?room=' + code;
+$('#inviteBtn').addEventListener('click', (e) => {
+  const btn = e.currentTarget, url = inviteUrl(NET.code);
+  const done = () => { btn.textContent = 'Link copied'; setTimeout(() => (btn.textContent = 'Invite link'), 1600); };
+  try { navigator.clipboard.writeText(url).then(done, () => roomMsg(url)); } catch (err) { roomMsg(url); }
+});
 addEventListener('beforeunload', () => { try { if (NET.peer) NET.peer.destroy(); } catch (e) { /* closing */ } });
 
 // =====================================================================
@@ -4100,7 +4109,9 @@ function addFeed(killer, victim, verb) {
 }
 let bannerTimer = 0;
 function showBanner(s, t) { $('#bannerS').textContent = s; $('#bannerT').textContent = t; $('#banner').classList.add('on'); clearTimeout(bannerTimer); bannerTimer = setTimeout(() => $('#banner').classList.remove('on'), 2200); }
-function toggleMute() { const m = SFX.toggle(); $('#muteWave').style.display = m ? 'none' : ''; $('#muteBtn').setAttribute('aria-label', m ? 'Unmute sound' : 'Mute sound'); }
+// mute is remembered between visits; a #mute hash in the URL always starts muted (handy for testing)
+function showMute(m) { $('#muteWave').style.display = m ? 'none' : ''; $('#muteBtn').setAttribute('aria-label', m ? 'Unmute sound' : 'Mute sound'); }
+function toggleMute() { const m = SFX.toggle(); SETTINGS.muted = m; store.set('settings', SETTINGS); showMute(m); }
 function buildCharMenu() {
   const menu = $('#charMenu'); menu.innerHTML = '';
   for (const k of PLAYABLE) {
@@ -4222,8 +4233,14 @@ camT.set(0, 1.7, -14);
 buildCharMenu(); setupHUD(); setRoomUI();
 enableTouch(coarsePointer.matches); syncHudVars();
 toggleHelp(innerWidth >= 980 && innerHeight >= 700 && !TOUCH.on);
+{ const m = !!SETTINGS.muted || /mute/.test(location.hash); SFX.setMuted(m); showMute(m); }
+{
+  const q = new URLSearchParams(location.search);
+  const c = (q.get('room') || '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 5);
+  if (c.length === 5) { if (q.get('host') === '1') hostArena(c); else joinArena(c); }
+}
 requestAnimationFrame(frame);
 // ?dev=1 exposes internals for automated testing in the browser console
-if (/[?&]dev=1/.test(location.search)) window.__scbg = { fighters, get player() { return player; }, get gameTime() { return gameTime; }, CHARS, hit, press, held, BUF, SETTINGS, BIND, KOTH, NET, addBot, removeBot, useAbility, doM1, cycleLock, lock, toggleFpv, get fpv() { return fpv; }, renderer, M1, GUARD, PARRY, COMBO, scene, camera, updateTags, updateHUD, animateFighter, updateParts, updateRings, updateTemps, updateDebris, updateAuras, updateLock, updateCamera, updateNums, updateEventChip, drawProjs, simStep };
+if (/[?&]dev=1/.test(location.search)) window.__scbg = { SFX, fighters, get player() { return player; }, get gameTime() { return gameTime; }, CHARS, hit, press, held, BUF, SETTINGS, BIND, KOTH, NET, addBot, removeBot, useAbility, doM1, cycleLock, lock, toggleFpv, get fpv() { return fpv; }, renderer, M1, GUARD, PARRY, COMBO, scene, camera, updateTags, updateHUD, animateFighter, updateParts, updateRings, updateTemps, updateDebris, updateAuras, updateLock, updateCamera, updateNums, updateEventChip, drawProjs, simStep };
 })();
 </script>
