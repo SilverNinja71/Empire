@@ -11,7 +11,7 @@ Each game lives in its own repo:
 | [`mace-pvp`](https://github.com/SilverNinja71/mace-pvp) | **Spear-Mace PVP**: 2D aerial fighting inspired by Minecraft's Mace and Spear | [play](https://silverninja71.github.io/mace-pvp/) |
 | [`penguin-life`](https://github.com/SilverNinja71/penguin-life) | **Penguin Life**: a Duck Life-style game. Train your penguin, then race from the Zoo to the Arctic, the North Pole and beyond | [play](https://silverninja71.github.io/penguin-life/) |
 | [`penguintrack`](https://github.com/SilverNinja71/penguintrack) | **Penguintrack**: a snow-themed, Trackmania-style 3D racer with a track editor, replays, TAS tools and an AI training kit | [play](https://silverninja71.github.io/penguintrack/) |
-| [`battlegrounds`](https://github.com/SilverNinja71/battlegrounds) | **Stone Court Battlegrounds**: 3D arena brawler with combos, ultimates and room codes | [play](https://silverninja71.github.io/battlegrounds/) |
+| [`Elite-Ball-Brawl`](https://github.com/SilverNinja71/Elite-Ball-Brawl) | **Stone Court Battlegrounds**: 3D arena brawler with combos, ultimates and room codes | [play](https://silverninja71.github.io/Elite-Ball-Brawl/) |
 
 This repo holds:
 
@@ -30,7 +30,7 @@ git clone https://github.com/SilverNinja71/mace-pvp.git
 git clone https://github.com/SilverNinja71/penguin-league.git
 git clone https://github.com/SilverNinja71/penguin-life.git
 git clone https://github.com/SilverNinja71/penguintrack.git
-git clone https://github.com/SilverNinja71/battlegrounds.git
+git clone https://github.com/SilverNinja71/Elite-Ball-Brawl.git
 python3 Empire/server.py
 ```
 

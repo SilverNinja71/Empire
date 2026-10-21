@@ -40,7 +40,7 @@ GAMES = [
     ("Spear-Mace PVP", "mace-pvp/", "https://github.com/SilverNinja71/mace-pvp.git"),
     ("Penguin Life", "penguin-life/", "https://github.com/SilverNinja71/penguin-life.git"),
     ("Penguintrack", "penguintrack/", "https://github.com/SilverNinja71/penguintrack.git"),
-    ("Stone Court Battlegrounds", "battlegrounds/", "https://github.com/SilverNinja71/battlegrounds.git"),
+    ("Stone Court Battlegrounds", "Elite-Ball-Brawl/", "https://github.com/SilverNinja71/Elite-Ball-Brawl.git"),
 ]
 
 # Text files worth compressing (images, fonts and audio are already compressed)
