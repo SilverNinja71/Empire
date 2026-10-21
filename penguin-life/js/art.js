@@ -99,6 +99,27 @@
     Object.assign(PL, { ell, circ, poly, ellP, circP, polyP, fo, hash, shade, star, roundRect, blob });
 
     // ================= PENGUIN =================
+    // Squash and stretch: pass any object that lives as long as the penguin as o.body and the
+    // drawing follows its on-screen motion - tall and thin while it flies up or drops, short and
+    // wide for a moment when it lands. o.sq sets the amount by hand (+ stretch, - squash).
+    function squashOf(body, y, t) {
+        const st = body._sq || (body._sq = { y, t, vy: 0, land: 0 });
+        const dt = t - st.t;
+        if (dt > 0 && dt < 0.1) {
+            const vy = (y - st.y) / dt; // screen px/s, + is down
+            // Was dropping, now stopped or going up: that's a landing
+            if (st.vy > 60 && vy < st.vy * 0.25) st.land = Math.max(st.land, Math.min(1, st.vy / 500));
+            st.vy += (vy - st.vy) * Math.min(1, dt * 25);
+            st.land = Math.max(0, st.land - dt * 6);
+        } else if (dt !== 0) {
+            st.vy = 0;
+            st.land = 0;
+        }
+        st.y = y;
+        st.t = t;
+        return Math.min(0.16, Math.abs(st.vy) / 4000) - st.land * 0.22;
+    }
+
     // (x, y) is the feet for standing poses and the body center for "swim" / "slide".
     PL.drawPenguin = function (ctx, x, y, s, o) {
         o = o || {};
@@ -112,6 +133,9 @@
         ctx.save();
         ctx.translate(x, y);
         if (o.alpha !== undefined) ctx.globalAlpha = o.alpha;
+        const sq = o.sq !== undefined ? o.sq : o.body ? squashOf(o.body, y, t) : 0;
+        // Scaled around the feet, so a landing squash stays on the ground; volume is roughly kept
+        if (sq) ctx.scale(1 - sq * 0.6, 1 + sq);
 
         if (pose === "swim" || pose === "slide") {
             ctx.rotate((o.tilt || 0) * facing);

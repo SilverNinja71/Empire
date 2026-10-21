@@ -11,6 +11,23 @@
     const ctx = canvas.getContext("2d");
     const $ = (id) => document.getElementById(id);
 
+    // Draw at the screen's real pixel density so text and outlines stay sharp on Retina screens
+    // and phones. The game still thinks in 960x540; view.k maps that onto the bigger buffer.
+    const view = { k: 1 };
+    function fitCanvas() {
+        const cssW = canvas.getBoundingClientRect().width || W;
+        // Capped at 2x: sharper isn't visible at this size, and every extra pixel costs fill rate
+        const k = PL.clamp((cssW * (window.devicePixelRatio || 1)) / W, 1, 2);
+        const w = Math.round(W * k), h = Math.round(H * k);
+        if (canvas.width !== w || canvas.height !== h) {
+            canvas.width = w;
+            canvas.height = h;
+        }
+        view.k = w / W;
+    }
+    fitCanvas();
+    window.addEventListener("resize", fitCanvas);
+
     const STATIONS = [
         { id: "feed", x: 260, name: "Feed", verb: "Feed your penguin" },
         { id: "swim", x: 720, name: "Swimming", verb: "Train Swimming" },
@@ -708,7 +725,9 @@
                 '<div class="row"><button class="btn primary" id="host">Host a room</button></div>' +
                 '<div class="row"><input id="code" maxlength="5" placeholder="ROOM CODE" style="text-transform:uppercase"><button class="btn" id="join">Join</button></div>';
         } else if (net.role === "host") {
-            body = '<p>Room code: <span class="code">' + (lobby.code || "…") + "</span></p><p class='small'>Tell your friends to open Penguin Life → Battle Grounds → Battle a Friend → Join.</p>" +
+            body = '<p>Room code: <span class="code">' + (lobby.code || "…") + "</span></p>" +
+                '<div class="row"><button class="btn" id="invite">' + PL.icon("friends", 18) + " Copy invite link</button></div>" +
+                "<p class='small'>Send the link to your friends: opening it joins this room straight away. They can also type the code in Battle Grounds → Battle a Friend → Join.</p>" +
                 '<div class="lobby">' + lobby.players.map((p) => "<div>" + PL.icon("penguin", 20) + " " + esc(p.name) + (p.id === "host" ? " (you)" : "") + "</div>").join("") + "</div>" +
                 '<div class="row"><button class="btn primary" id="start"' + (lobby.players.length < 2 ? " disabled" : "") + ">Start battle</button></div>";
         } else {
@@ -720,8 +739,9 @@
             (lobby.status ? '<p class="warn">' + esc(lobby.status) + "</p>" : "") +
             (net.role ? '<div class="row"><button class="btn" id="leave">Leave room</button></div>' : "")
         );
-        bind("#host", hostRoom);
+        bind("#host", () => hostRoom());
         bind("#join", () => joinRoom($("code").value.trim().toUpperCase()));
+        bind("#invite", copyInvite);
         bind("#start", hostStart);
         bind("#leave", () => {
             PL.net.close();
@@ -736,8 +756,19 @@
         return { t: "hello", name: d.name, look: d.look, lv: d.lv };
     }
 
-    function hostRoom() {
-        lobby.code = PL.makeRoomCode();
+    // A link that drops a friend straight into this room (see ROOM LINKS at the bottom)
+    function inviteUrl(code) {
+        return location.origin + location.pathname + "?room=" + code;
+    }
+    function copyInvite() {
+        const url = inviteUrl(lobby.code);
+        const done = () => toast("Invite link copied! Paste it to your friends.");
+        if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(url).then(done, () => toast(url));
+        else toast(url);
+    }
+
+    function hostRoom(code) {
+        lobby.code = code || PL.makeRoomCode();
         lobby.status = "Opening room…";
         const d = playerDef();
         lobby.players = [{ id: "host", name: d.name, look: d.look, lv: d.lv }];
@@ -752,7 +783,8 @@
         });
     }
 
-    function joinRoom(code) {
+    // tries: an invite link keeps knocking for a while in case the host is still opening the room
+    function joinRoom(code, tries) {
         if (code.length < 4) return;
         lobby.status = "Connecting…";
         openFriends(true);
@@ -761,8 +793,11 @@
             PL.net.send(myHello());
             openFriends(true);
         }, (err) => {
-            lobby.status = err;
             PL.net.close();
+            if (tries > 0 && /No room/.test(err)) {
+                lobby.status = "Waiting for room " + code + " to open…";
+                setTimeout(() => joinRoom(code, tries - 1), 2500);
+            } else lobby.status = err;
             if (app.modal && app.scene === "home") openFriends(true);
         });
     }
@@ -1424,7 +1459,7 @@
             const hopY = n.hop > 0 ? Math.sin(((0.5 - n.hop) / 0.5) * Math.PI) * 26 : 0;
             ctx.fillStyle = "rgba(0,0,0,0.15)";
             PL.ell(ctx, sx, GY + 3, 20, 5);
-            PL.drawPenguin(ctx, sx, GY - hopY, 0.82, { look: n.look, walk: n.wait <= 0 && n.hop <= 0, facing: n.hop > 0 ? Math.sign(app.hx - n.x) || 1 : n.dir, t: app.t + n.seed, seed: n.seed, face: n.hop > 0 ? "happy" : "normal", pose: n.hop > 0 ? "cheer" : "stand" });
+            PL.drawPenguin(ctx, sx, GY - hopY, 0.82, { look: n.look, walk: n.wait <= 0 && n.hop <= 0, facing: n.hop > 0 ? Math.sign(app.hx - n.x) || 1 : n.dir, t: app.t + n.seed, seed: n.seed, face: n.hop > 0 ? "happy" : "normal", pose: n.hop > 0 ? "cheer" : "stand", body: n });
         }
     }
 
@@ -1523,7 +1558,11 @@
 
     canvas.addEventListener("click", (e) => {
         if (app.scene === "title") {
-            startFromTitle();
+            const r = canvas.getBoundingClientRect();
+            const x = ((e.clientX - r.left) / r.width) * W, y = ((e.clientY - r.top) / r.height) * H;
+            const b = FRIENDS_BTN;
+            if (Math.abs(x - b.x) < b.w / 2 && Math.abs(y - b.y) < b.h / 2) startFromTitle(() => openFriends());
+            else startFromTitle();
             return;
         }
         if (app.scene !== "home" || app.modal) return;
@@ -1547,6 +1586,8 @@
     });
 
     // ================= TITLE SCREEN =================
+    const FRIENDS_BTN = { x: W / 2, y: 238, w: 250, h: 44 };
+    const TITLE_BODY = {};
     const PARADE = [
         { color: "classic", hat: "party", scarf: "none", glasses: "none" },
         { color: "littleblue", hat: "beanie", scarf: "blue", glasses: "none" },
@@ -1571,7 +1612,7 @@
         const cheer = Math.sin(t * 1.6) > 0.7;
         ctx.fillStyle = "rgba(0,0,0,0.18)";
         PL.ell(ctx, W / 2, GY + 4, 40, 8);
-        PL.drawPenguin(ctx, W / 2, GY - (cheer ? Math.abs(Math.sin(t * 8)) * 16 : 0), 1.9, { look: PL.account.penguin().look, t, pose: cheer ? "cheer" : "stand", face: cheer ? "happy" : "normal" });
+        PL.drawPenguin(ctx, W / 2, GY - (cheer ? Math.abs(Math.sin(t * 8)) * 16 : 0), 1.9, { look: PL.account.penguin().look, t, pose: cheer ? "cheer" : "stand", face: cheer ? "happy" : "normal", body: TITLE_BODY });
 
         PL.drawWeather(ctx, mood, t, scroll);
         // Bouncing logo, letter by letter
@@ -1585,6 +1626,16 @@
             x += widths[i];
         });
         PL.hudText(ctx, "Train it · Feed it · Race the world", W / 2, 186, { size: 22, align: "center", color: "#fff8e1" });
+        const fb = FRIENDS_BTN;
+        const over = mouse && Math.abs(mouse.x - fb.x) < fb.w / 2 && Math.abs(mouse.y - fb.y) < fb.h / 2;
+        ctx.fillStyle = "rgba(0,0,0,0.18)";
+        PL.roundRect(ctx, fb.x - fb.w / 2, fb.y - fb.h / 2 + 4, fb.w, fb.h, 14);
+        ctx.fill();
+        ctx.fillStyle = over ? "#ffe082" : "#ffd54f";
+        PL.roundRect(ctx, fb.x - fb.w / 2, fb.y - fb.h / 2, fb.w, fb.h, 14);
+        ctx.fill();
+        PL.drawIcon(ctx, "friends", fb.x - fb.w / 2 + 28, fb.y, 26);
+        PL.hudText(ctx, "Play With Friends", fb.x + 14, fb.y, { size: 21, align: "center", stroke: false, color: "#3b2a1e" });
         if (Math.floor(t * 2) % 2 === 0) {
             PL.hudText(ctx, (isTouch() ? "Tap" : "Click or press SPACE") + " to play", W / 2, H - 46, { size: 24, align: "center", box: "#fff4dc", stroke: false, color: "#3b2a1e" });
         }
@@ -1596,13 +1647,15 @@
         }
     }
 
-    function startFromTitle() {
+    // `after` (optional) runs at home instead of the usual name prompt / daily reward
+    function startFromTitle(after) {
         if (app.scene !== "title" || PL.fx.wipe) return;
         PL.sfx("go");
         PL.fx.wipeTo(() => {
             enterHome();
             const pl = PL.account.penguin();
-            if (!pl.name) askPenguinName(true);
+            if (after) after();
+            else if (!pl.name) askPenguinName(true);
             else setTimeout(openDailyIfReady, 350);
         });
     }
@@ -1667,6 +1720,7 @@
         // Hit-stop: freeze the action for a split second on big hits; slow-mo (Perfect Dodge) scales it down
         const dt = PL.fx.stopT > 0 ? 0 : realDt * PL.fx.timeScale();
         const off = PL.fx.offset();
+        ctx.setTransform(view.k, 0, 0, view.k, 0, 0);
         ctx.save();
         ctx.translate(off[0], off[1]);
 
@@ -1730,6 +1784,13 @@
     PL.account.update((p, pl) => PL.progress.ensure(pl));
     setTouchMode("home");
     requestAnimationFrame(frame);
+
+    // ================= ROOM LINKS =================
+    // ?room=CODE joins that friend room straight from the link. ?room=CODE&host=1 opens the room
+    // with that exact code instead (used when a party leader brings friends along).
+    const params = new URLSearchParams(location.search);
+    const linkCode = (params.get("room") || "").toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 5);
+    if (linkCode.length === 5) startFromTitle(() => (params.get("host") === "1" ? hostRoom(linkCode) : joinRoom(linkCode, 5)));
 
     // Handy for testing from the console
     PL.app = app;
