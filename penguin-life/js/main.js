@@ -783,7 +783,8 @@
         });
     }
 
-    function joinRoom(code) {
+    // tries: an invite link keeps knocking for a while in case the host is still opening the room
+    function joinRoom(code, tries) {
         if (code.length < 4) return;
         lobby.status = "Connecting…";
         openFriends(true);
@@ -792,8 +793,11 @@
             PL.net.send(myHello());
             openFriends(true);
         }, (err) => {
-            lobby.status = err;
             PL.net.close();
+            if (tries > 0 && /No room/.test(err)) {
+                lobby.status = "Waiting for room " + code + " to open…";
+                setTimeout(() => joinRoom(code, tries - 1), 2500);
+            } else lobby.status = err;
             if (app.modal && app.scene === "home") openFriends(true);
         });
     }
@@ -1786,7 +1790,7 @@
     // with that exact code instead (used when a party leader brings friends along).
     const params = new URLSearchParams(location.search);
     const linkCode = (params.get("room") || "").toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 5);
-    if (linkCode.length === 5) startFromTitle(() => (params.get("host") === "1" ? hostRoom(linkCode) : joinRoom(linkCode)));
+    if (linkCode.length === 5) startFromTitle(() => (params.get("host") === "1" ? hostRoom(linkCode) : joinRoom(linkCode, 5)));
 
     // Handy for testing from the console
     PL.app = app;
