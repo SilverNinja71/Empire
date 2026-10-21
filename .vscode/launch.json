@@ -2,18 +2,6 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "Launch Mace PVP (Chrome)",
-            "type": "chrome",
-            "request": "launch",
-            "file": "${workspaceFolder}/mace-pvp/index.html"
-        },
-        {
-            "name": "Launch spear-mace-pvp.html (Standalone)",
-            "type": "chrome",
-            "request": "launch",
-            "file": "${workspaceFolder}/mace-pvp/spear-mace-pvp.html"
-        },
-        {
             "name": "Launch Local Server (Python)",
             "type": "python",
             "request": "launch",

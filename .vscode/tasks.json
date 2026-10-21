@@ -2,24 +2,14 @@
     "version": "2.0.0",
     "tasks": [
         {
-            "label": "Build Bundle & Standalone HTML",
-            "type": "shell",
-            "command": "python3 mace-pvp/build.py",
-            "group": {
-                "kind": "build",
-                "isDefault": true
-            },
-            "presentation": {
-                "reveal": "always",
-                "panel": "shared"
-            },
-            "problemMatcher": []
-        },
-        {
             "label": "Start Game Server",
             "type": "shell",
             "command": "python3 server.py",
             "isBackground": true,
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
             "presentation": {
                 "reveal": "always",
                 "panel": "new"

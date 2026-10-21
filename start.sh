@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# Spear-Mace PVP + Penguin Life + Penguintrack - Quick Start Script
+# SilverNinja Games - Quick Start Script (serves the hub and every game repo cloned next to it)
 
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 cd "$DIR"
 
-echo "Starting Spear-Mace PVP + Penguin Life + Penguintrack..."
+echo "Starting SilverNinja Games..."
 
 if command -v python3 &> /dev/null; then
     python3 server.py

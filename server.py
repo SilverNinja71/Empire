@@ -3,6 +3,13 @@
 Local Game Server for SilverNinja Games
 Serves every game from one origin (so they share one account) and opens the hub in your default web browser.
 
+Each game is its own repo. Clone them next to this one, like they sit on GitHub Pages:
+    some-folder/Empire/          <- this hub (and shared/accounts.js)
+    some-folder/mace-pvp/
+    some-folder/penguin-league/
+    ...
+This server serves some-folder, so the hub is at /Empire/ and each game at /<repo>/.
+
 Speed-ups over Python's plain file server:
   * Many files at once (one thread per connection) with HTTP/1.1 keep-alive.
   * Text files (HTML, JS, CSS, JSON, SVG...) are gzipped, and the gzip is kept until the file changes.
@@ -23,15 +30,17 @@ import threading
 import urllib.parse
 import webbrowser
 
-PORT = 8080
-DIRECTORY = os.path.dirname(os.path.abspath(__file__))
+PORT = int(os.environ.get("PORT", 8080))  # PORT=9000 python3 server.py picks another port
+HUB_DIR = os.path.dirname(os.path.abspath(__file__))
+HUB = os.path.basename(HUB_DIR) + "/"
+DIRECTORY = os.path.dirname(HUB_DIR)  # the folder holding the hub and every game repo
 
 GAMES = [
-    ("Penguin League", "penguin-league/"),
-    ("Spear-Mace PVP", "mace-pvp/"),
-    ("Penguin Life", "penguin-life/"),
-    ("Penguintrack", "penguintrack/"),
-    ("Stone Court Battlegrounds", "battlegrounds/"),
+    ("Penguin League", "penguin-league/", "https://github.com/SilverNinja71/penguin-league.git"),
+    ("Spear-Mace PVP", "mace-pvp/", "https://github.com/SilverNinja71/mace-pvp.git"),
+    ("Penguin Life", "penguin-life/", "https://github.com/SilverNinja71/penguin-life.git"),
+    ("Penguintrack", "penguintrack/", "https://github.com/SilverNinja71/penguintrack.git"),
+    ("Stone Court Battlegrounds", "battlegrounds/", "https://github.com/SilverNinja71/battlegrounds.git"),
 ]
 
 # Text files worth compressing (images, fonts and audio are already compressed)
@@ -97,7 +106,29 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 return False
         return False
 
+    def send_not_found(self):
+        """Like GitHub Pages: a missing page inside a repo gets that repo's 404.html, if it has one."""
+        top = urllib.parse.unquote(urllib.parse.urlsplit(self.path).path).lstrip("/").split("/", 1)[0]
+        page = os.path.join(DIRECTORY, top, "404.html") if top and not top.startswith(".") else ""
+        if not page or not os.path.isfile(page):
+            self.send_error(404, "File not found")
+            return None
+        with open(page, "rb") as f:
+            data = f.read()
+        self.send_response(404)
+        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Content-Length", str(len(data)))
+        self.send_header("Cache-Control", "no-cache")
+        self.end_headers()
+        return io.BytesIO(data)
+
     def send_head(self):
+        if urllib.parse.urlsplit(self.path).path == "/":
+            self.send_response(302)
+            self.send_header("Location", "/" + HUB)
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+            return None
         path = self.translate_path(self.path)
         if os.path.isdir(path):
             # Trailing-slash redirects and folder listings stay with the standard handler
@@ -110,13 +141,11 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             else:
                 return super().send_head()
         if path.endswith("/") or not os.path.isfile(path):
-            self.send_error(404, "File not found")
-            return None
+            return self.send_not_found()
         try:
             st = os.stat(path)
         except OSError:
-            self.send_error(404, "File not found")
-            return None
+            return self.send_not_found()
 
         ext = os.path.splitext(path)[1].lower()
         compress = ext in COMPRESSIBLE and st.st_size >= MIN_GZIP_BYTES and self.accepts_gzip()
@@ -191,19 +220,28 @@ def run():
             continue
 
     if not server:
-        print("Error: Could not bind to any port from 8080 to 8100.")
+        print(f"Error: Could not bind to any port from {PORT} to {PORT + 19}.")
         sys.exit(1)
 
-    url = f"http://localhost:{port}/"
-    width = max(len(name) for name, _ in GAMES) + 1
+    root = f"http://localhost:{port}/"
+    url = root + HUB
+    width = max(len(name) for name, _, _ in GAMES) + 1
     print("=" * 62)
     print("🎮 SILVERNINJA GAMES - Server Running!")
     print(f"👉 Hub: {url}")
-    for name, folder in GAMES:
-        print(f"   {(name + ':').ljust(width)} {url}{folder}")
+    missing = []
+    for name, folder, repo in GAMES:
+        found = os.path.isdir(os.path.join(DIRECTORY, folder))
+        print(f"   {(name + ':').ljust(width)} {root}{folder}" + ("" if found else "  (not cloned yet)"))
+        if not found:
+            missing.append(repo)
+    if missing:
+        print(f"⚠️  To get the missing games, run these in {DIRECTORY}:")
+        for repo in missing:
+            print(f"   git clone {repo}")
     lan = lan_address()
     if lan:
-        print(f"📱 Phone on the same Wi-Fi: http://{lan}:{port}/")
+        print(f"📱 Phone on the same Wi-Fi: http://{lan}:{port}/{HUB}")
         print("   (a phone keeps its own account; password sign-in needs localhost or https)")
     print("🛑 Press Ctrl+C to stop the server.")
     print("=" * 62)
