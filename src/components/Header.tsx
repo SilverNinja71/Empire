@@ -3,11 +3,12 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { Activity, Bell, Library, Lock, LogIn, LogOut, Menu, MessagesSquare, Paintbrush, Palette, Plus, Search, Store, Trophy, User } from 'lucide-react';
 import { useAllGames, useStore } from '../lib/store';
 import { href, navigate, useRoute } from '../lib/router';
-import { accounts, useAccount } from '../lib/account';
+import { useAccount } from '../lib/account';
 import { THEMES, THEME_BY_ID, type ThemeDef } from '../lib/themes';
 import { useThemeDef } from '../lib/useTheme';
 import { useUnlocks } from '../lib/unlocks';
 import { EmpireLogo } from './EmpireLogo';
+import { signOutEverywhere, useAuth } from '../lib/auth';
 import { timeAgo } from '../lib/util';
 import { Cover } from './Cover';
 
@@ -249,22 +250,33 @@ function Notifications() {
   );
 }
 
+function Avatar({ name, size = 36, fontSize = 15 }: { name: string; size?: number; fontSize?: number }) {
+  const photo = useAuth((s) => s.user?.photo);
+  const [broken, setBroken] = useState(false);
+  return photo && !broken ? (
+    <img src={photo} alt="" width={size} height={size} referrerPolicy="no-referrer" onError={() => setBroken(true)} style={{ borderRadius: '50%', display: 'block' }} />
+  ) : (
+    <span style={{ fontSize }}>{name.slice(0, 1).toUpperCase()}</span>
+  );
+}
+
 function ProfileMenu() {
   const [acc, refresh] = useAccount();
+  const via = acc.provider ?? '';
   const openModal = useStore((s) => s.openModal);
   const [open, setOpen] = useState(false);
   const ref = useClickAway(open, () => setOpen(false));
   return (
     <div className="pop-wrap" ref={ref}>
-      <button className="avatar" onClick={() => setOpen(!open)} aria-label="Your profile" title={acc.username}>
-        {acc.username.slice(0, 1).toUpperCase()}
+      <button className="avatar" onClick={() => setOpen(!open)} aria-label="Your profile" title={acc.username} style={{ overflow: 'hidden', padding: 0 }}>
+        <Avatar name={acc.username} />
       </button>
       <Popover open={open} width={280}>
         <div style={{ display: 'flex', gap: 12, alignItems: 'center', padding: '4px 6px 12px' }}>
-          <span className="avatar" style={{ width: 44, height: 44, fontSize: 18 }}>{acc.username.slice(0, 1).toUpperCase()}</span>
+          <span className="avatar" style={{ width: 44, height: 44, overflow: 'hidden' }}><Avatar name={acc.username} size={44} fontSize={18} /></span>
           <div>
             <b>{acc.username}</b>
-            <div className="muted" style={{ fontSize: 12 }}>{acc.signedIn ? (acc.title ? acc.title.title || acc.title.name : 'Signed in') : 'Playing as a guest'}</div>
+            <div className="muted" style={{ fontSize: 12 }}>{acc.signedIn ? (via ? `Signed in with ${via}` : acc.title ? acc.title.title || acc.title.name : 'Signed in') : 'Playing as a guest'}</div>
           </div>
         </div>
         <div style={{ display: 'flex', gap: 8, padding: '0 6px 10px' }}>
@@ -273,7 +285,7 @@ function ProfileMenu() {
         </div>
         <a className="side-link" href={href('/library')} onClick={() => setOpen(false)}><User size={16} /> Profile & library</a>
         {acc.signedIn ? (
-          <button className="side-link" onClick={() => { accounts()?.logOut(); refresh(); setOpen(false); }}><LogOut size={16} /> Log out</button>
+          <button className="side-link" onClick={async () => { await signOutEverywhere(); refresh(); setOpen(false); }}><LogOut size={16} /> Log out</button>
         ) : (
           <button className="side-link" onClick={() => { openModal('account'); setOpen(false); }}><LogIn size={16} /> Sign in or make an account</button>
         )}

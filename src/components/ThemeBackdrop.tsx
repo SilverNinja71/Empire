@@ -13,18 +13,45 @@ function rng(seed: number) {
   };
 }
 
-/** A row of pine trees standing on a wavy ridge, as one filled path. */
+/** One pine tree: stacked branch layers that step out on each side, on a short trunk. */
+function pineTree(cx: number, base: number, h: number, r: () => number) {
+  const tiers = 4 + Math.floor(r() * 2);
+  const halfW = h * (0.26 + r() * 0.06); // widest branches at the bottom
+  const trunkH = h * 0.08;
+  const top = base - h;
+  const body = h - trunkH;
+  const pts: [number, number][] = [];
+  // Left side, bottom to top: each tier flares out, then tucks in under the next one
+  for (let i = 0; i < tiers; i++) {
+    const t0 = i / tiers, t1 = (i + 1) / tiers;
+    const y0 = base - trunkH - body * t0 * 0.92;
+    const y1 = base - trunkH - body * t1 * 0.92;
+    const w0 = halfW * (1 - t0 * 0.82);
+    const w1 = halfW * (1 - t1 * 0.82);
+    pts.push([cx - w0, y0 + 2]); // branch tip droops a little
+    pts.push([cx - w1 * 0.55, y1 + (y0 - y1) * 0.18]); // tuck in
+  }
+  pts.push([cx, top]);
+  const right = pts.slice(0, -1).reverse().map(([x, y]) => [2 * cx - x, y] as [number, number]);
+  const trunkW = Math.max(3, halfW * 0.12);
+  let d = `M${cx - trunkW} ${base + 4} L${cx - trunkW} ${base - trunkH}`;
+  for (const [x, y] of [...pts, ...right]) d += ` L${x.toFixed(1)} ${y.toFixed(1)}`;
+  d += ` L${cx + trunkW} ${base - trunkH} L${cx + trunkW} ${base + 4} Z`;
+  return d;
+}
+
+/** A forest on a wavy ridge: ground fill plus pine trees of mixed sizes. */
 function pineRidge(seed: number, base: number, wave: number, treeH: number, step: number, w = 1600, h = 900) {
   const r = rng(seed);
   const ridge = (x: number) => base + Math.sin(x / 210 + seed) * wave + Math.sin(x / 77 + seed * 2) * wave * 0.35;
-  let d = `M0 ${h} L0 ${ridge(0)}`;
-  for (let x = 0; x <= w; x += step) {
-    const y = ridge(x);
-    const th = treeH * (0.6 + r() * 0.7);
-    const tw = step * (0.55 + r() * 0.3);
-    d += ` L${x} ${y} L${x + tw / 2} ${y - th} L${x + tw} ${y}`;
+  let d = `M0 ${h} L0 ${ridge(0) + 6}`;
+  for (let x = 0; x <= w; x += 40) d += ` L${x} ${ridge(x) + 6}`;
+  d += ` L${w} ${h} Z`;
+  for (let x = -step * 0.5; x <= w + step; x += step * (0.7 + r() * 0.6)) {
+    const th = treeH * (0.55 + r() * 0.6);
+    d += ' ' + pineTree(x, ridge(x) + 8, th, r);
   }
-  return d + ` L${w} ${h} Z`;
+  return d;
 }
 
 function mountains(seed: number, base: number, height: number, peaks: number, w = 1600, h = 900) {
@@ -41,9 +68,9 @@ function mountains(seed: number, base: number, height: number, peaks: number, w 
 function Sunset() {
   const far = useMemo(() => mountains(3, 560, 230, 7), []);
   const mid = useMemo(() => mountains(11, 620, 180, 9), []);
-  const pines1 = useMemo(() => pineRidge(5, 660, 26, 70, 22), []);
-  const pines2 = useMemo(() => pineRidge(17, 735, 22, 95, 30), []);
-  const near = useMemo(() => pineRidge(29, 820, 18, 140, 46), []);
+  const pines1 = useMemo(() => pineRidge(5, 660, 26, 80, 34), []);
+  const pines2 = useMemo(() => pineRidge(17, 735, 22, 110, 48), []);
+  const near = useMemo(() => pineRidge(29, 820, 18, 170, 70), []);
   return (
     <svg viewBox="0 0 1600 900" preserveAspectRatio="xMidYMax slice" className="bd-svg">
       <defs>
@@ -157,7 +184,7 @@ function October() {
         {Array.from({ length: 60 }, (_, i) => <circle key={i} className="twinkle" cx={(i * 263) % 1600} cy={(i * 131) % 480} r={i % 4 === 0 ? 1.8 : 1} fill="#fff" style={{ animationDelay: `${(i % 7) * 0.6}s` }} />)}
         <g className="px px1"><circle cx="1230" cy="200" r="260" fill="url(#oc-moon)" /><circle cx="1230" cy="200" r="95" fill="#ffe1ad" /><circle cx="1200" cy="180" r="14" fill="#f3c88a" opacity="0.6" /><circle cx="1262" cy="228" r="9" fill="#f3c88a" opacity="0.5" /></g>
         <g className="px px3"><path d={mountains(41, 760, 170, 6)} fill="#1a1230" /></g>
-        <g className="px px4"><path d={pineRidge(43, 820, 16, 70, 26)} fill="#110b1f" /></g>
+        <g className="px px4"><path d={pineRidge(43, 820, 16, 90, 40)} fill="#110b1f" /></g>
         <g className="wisps" filter="url(#oc-blur)">
           {Array.from({ length: 8 }, (_, i) => <circle key={i} cx={150 + i * 190} cy={760 - (i % 3) * 60} r={10 + (i % 3) * 5} fill={i % 2 ? '#8B5CF6' : '#c4b5fd'} style={{ animationDelay: `${i * 1.3}s` }} />)}
         </g>

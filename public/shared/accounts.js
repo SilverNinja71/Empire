@@ -161,7 +161,7 @@
         current() {
             const s = load();
             const a = s.active && s.accounts[s.active];
-            return a ? { username: a.username, key: s.active } : null;
+            return a ? { username: a.username, key: s.active, provider: a.external ? a.via || a.external : null } : null;
         },
         // Accounts on this device, most recently used first
         list() {
@@ -226,6 +226,44 @@
             return { ok: true, username: a.username };
         },
 
+        // Sign in with Google, Microsoft or GitHub (checked by Empire's sign-in service).
+        // The account lives in this browser like any other, keyed by the provider's user id,
+        // so the same person gets the same account (and progress) every time.
+        // keepProgress: when you were playing as a guest, carry that progress into a brand new account.
+        signInExternal(info, keepProgress) {
+            const provider = String((info && info.provider) || "").replace(/[^a-z.]/gi, "").slice(0, 20);
+            const uid = String((info && info.uid) || "").slice(0, 128);
+            if (!provider || !uid) return fail("Sign-in didn't say who you are. Try again.");
+            const key = "ext:" + provider + ":" + uid;
+            const via = String((info && info.via) || provider).replace(/[^a-z]/gi, "").slice(0, 20); // e.g. Google, shown to people
+            let username = String((info && info.name) || "").replace(/[^a-zA-Z0-9_ ]/g, "").replace(/\s+/g, " ").trim().slice(0, 16);
+            if (username.length < 2) username = "Player " + uid.slice(-4);
+            let s = load();
+            if (s.active === key && s.accounts[key]) return { ok: true, username: s.accounts[key].username };
+            const fromGuest = !s.active;
+            const current = readJSON(PROFILE_KEY);
+            stash(s);
+            const now = Date.now();
+            let profile;
+            if (s.accounts[key]) {
+                const a = s.accounts[key];
+                a.updated = now;
+                profile = a.profile ? markProfile(a.profile, a.username, key) : freshProfile(a.username, key);
+                username = a.username;
+                a.via = via;
+            } else {
+                if (keepProgress && fromGuest && current) {
+                    profile = markProfile(current, username, key);
+                    s.guest = null; // that progress now belongs to this account
+                } else profile = freshProfile(username, key);
+                s.accounts[key] = { username, external: provider, via, profile, created: now, updated: now };
+            }
+            s.active = key;
+            save(s);
+            setActiveProfile(profile);
+            return { ok: true, username };
+        },
+
         // Back to playing as a guest (with the guest progress from before, if any)
         logOut() {
             const s = stash(load());
@@ -242,6 +280,7 @@
             const s = stash(load());
             const a = s.active && s.accounts[s.active];
             if (!a) return fail("Log in first.");
+            if (a.external) return fail("This account signs in with " + (a.via || a.external) + ". Use that button on the other device instead of a transfer code.");
             save(s);
             const code = await pack({ v: 1, username: a.username, salt: a.salt, hash: a.hash, profile: a.profile, updated: a.updated });
             return { ok: true, code };

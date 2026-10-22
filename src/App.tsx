@@ -12,6 +12,7 @@ import { ThemeStudioModal } from './components/ThemeStudioModal';
 import { useThemeDef } from './lib/useTheme';
 import { applyTokens, THEMES } from './lib/themes';
 import { useUnlocks } from './lib/unlocks';
+import { startAuth } from './lib/auth';
 import { Store } from './pages/Store';
 import { GamePage } from './pages/GamePage';
 import { Forum } from './pages/Forum';
@@ -54,7 +55,7 @@ export function App() {
   const { parts } = useRoute();
   const top = parts[0] ?? '';
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => { load(); startAuth(); }, [load]);
   useEffect(() => {
     const root = document.documentElement;
     root.dataset.theme = active.id;

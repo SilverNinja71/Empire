@@ -19,7 +19,8 @@ interface Result {
 }
 
 interface GameAccountsAPI {
-  current(): { username: string; key: string } | null;
+  current(): { username: string; key: string; provider?: string | null } | null;
+  signInExternal?(info: { provider: string; uid: string; name: string; via?: string }, keepProgress: boolean): Result;
   list(): { key: string; username: string; updated: number }[];
   signUp(name: string, password: string, keepProgress: boolean): Promise<Result>;
   logIn(name: string, password: string): Promise<Result>;
@@ -50,6 +51,7 @@ interface Profile {
 
 export interface AccountState {
   signedIn: boolean;
+  provider: string | null;
   username: string;
   level: number;
   trophies: Trophy[];
@@ -66,6 +68,7 @@ function snapshot(): AccountState {
   const trophies = api?.trophies.earned() ?? [];
   return {
     signedIn: !!cur,
+    provider: cur?.provider ?? null,
     username: cur?.username || p?.username || 'Guest',
     level: Math.max(1, Number(p?.level) || 1),
     trophies,
