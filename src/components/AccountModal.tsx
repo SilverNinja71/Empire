@@ -1,9 +1,9 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { LogIn, UserPlus } from 'lucide-react';
 import { useStore } from '../lib/store';
 import { accounts } from '../lib/account';
 import { firebaseReady } from '../lib/firebaseConfig';
-import { PROVIDERS, signInWith, type ProviderId } from '../lib/auth';
+import { PROVIDERS, signInWith, useAuth, type ProviderId } from '../lib/auth';
 
 function BrandIcon({ id }: { id: ProviderId }) {
   if (id === 'google')
@@ -40,6 +40,20 @@ export function AccountModal() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [busyProvider, setBusyProvider] = useState<ProviderId | null>(null);
+  const libReady = useAuth((s) => s.libReady);
+  const attempt = useRef(0);
+  // A fresh start every time the window opens, even if an earlier sign-in window never answered
+  useEffect(() => {
+    if (open) { attempt.current++; setBusyProvider(null); setError(''); }
+  }, [open]);
+  // If you come back to this page while it still says "Opening…", the sign-in window was closed or lost: unlock the buttons
+  useEffect(() => {
+    if (!busyProvider) return;
+    const unlock = () => window.setTimeout(() => setBusyProvider((b) => (b ? null : b)), 1500);
+    window.addEventListener('focus', unlock);
+    const giveUp = window.setTimeout(() => setBusyProvider(null), 90000);
+    return () => { window.removeEventListener('focus', unlock); window.clearTimeout(giveUp); };
+  }, [busyProvider]);
   const api = accounts();
   const known = api?.list() ?? [];
 
@@ -69,18 +83,20 @@ export function AccountModal() {
                 type="button"
                 className="btn big"
                 style={{ justifyContent: 'flex-start', gap: 12 }}
-                disabled={!firebaseReady || !!busyProvider}
+                disabled={!firebaseReady || !libReady}
                 onClick={async () => {
+                  const mine = ++attempt.current;
                   setError('');
                   setBusyProvider(p.id);
                   const r = await signInWith(p.id);
+                  if (mine !== attempt.current) return; // a newer click (or closing the window) took over
                   setBusyProvider(null);
-                  if (!r.ok) return setError(r.error || 'That didn’t work.');
+                  if (!r.ok) return r.cancelled ? undefined : setError(r.error || 'That didn’t work.');
                   if (r.name) useStore.getState().toast(`Signed in with ${p.label}. Welcome, ${r.name}!`);
                   close();
                 }}
               >
-                <BrandIcon id={p.id} /> {busyProvider === p.id ? 'Opening ' + p.label + '…' : 'Continue with ' + p.label}
+                <BrandIcon id={p.id} /> {firebaseReady && !libReady ? 'Getting ready…' : busyProvider === p.id ? 'Waiting for ' + p.label + '… (click again to retry)' : 'Continue with ' + p.label}
               </button>
             ))}
             {!firebaseReady && <span className="muted" style={{ fontSize: 12 }}>Google, Microsoft and GitHub sign-in turn on once Empire’s sign-in service is connected.</span>}

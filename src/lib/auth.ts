@@ -22,7 +22,8 @@ interface AuthUser {
   provider: string;
 }
 
-export const useAuth = create<{ user: AuthUser | null; ready: boolean }>(() => ({ user: null, ready: !firebaseReady }));
+/** user: who's signed in. libReady: Firebase is loaded, so a click can open the sign-in window straight away. */
+export const useAuth = create<{ user: AuthUser | null; ready: boolean; libReady: boolean }>(() => ({ user: null, ready: !firebaseReady, libReady: false }));
 
 type Lib = { auth: Auth; mod: typeof import('firebase/auth') };
 let authPromise: Promise<Lib> | null = null;
@@ -41,6 +42,7 @@ function getAuthLib() {
       if (u) linkGameAccount(u, false);
     });
     loaded = { auth, mod };
+    useAuth.setState({ libReady: true });
     return loaded;
   })();
   return authPromise;
@@ -87,7 +89,7 @@ const MESSAGES: Record<string, string> = {
  * (A full-page redirect isn't used: browsers now block the cross-site storage it needs,
  * because Firebase's sign-in page lives on a different site from github.io.)
  */
-export async function signInWith(id: ProviderId): Promise<{ ok: boolean; error?: string; name?: string }> {
+export async function signInWith(id: ProviderId): Promise<{ ok: boolean; error?: string; name?: string; cancelled?: boolean }> {
   try {
     const { auth, mod } = loaded ?? (await getAuthLib());
     const provider =
@@ -96,12 +98,14 @@ export async function signInWith(id: ProviderId): Promise<{ ok: boolean; error?:
       new mod.OAuthProvider('microsoft.com');
     if (id === 'microsoft') (provider as InstanceType<typeof mod.OAuthProvider>).setCustomParameters({ prompt: 'select_account' });
     if (id === 'google') (provider as InstanceType<typeof mod.GoogleAuthProvider>).setCustomParameters({ prompt: 'select_account' });
+    // Clicking a second button while a window is open closes the first window (Firebase reports 'cancelled')
     const res = await mod.signInWithPopup(auth, provider);
     linkGameAccount(res.user, true);
     return { ok: true, name: describe(res.user).name };
   } catch (e) {
     const code = (e as { code?: string }).code ?? '';
-    return { ok: false, error: MESSAGES[code] ?? (e as Error).message ?? 'Sign-in didn’t work. Try again.' };
+    const cancelled = code === 'auth/cancelled-popup-request' || code === 'auth/popup-closed-by-user' || code === 'auth/user-cancelled';
+    return { ok: false, cancelled, error: MESSAGES[code] ?? (e as Error).message ?? 'Sign-in didn’t work. Try again.' };
   }
 }
 
