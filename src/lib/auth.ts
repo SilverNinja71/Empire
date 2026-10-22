@@ -69,6 +69,7 @@ export function startAuth() {
 }
 
 const MESSAGES: Record<string, string> = {
+  'auth/configuration-not-found': 'Sign-in isn’t switched on in Firebase yet (Authentication → Get started).',
   'auth/popup-closed-by-user': 'The sign-in window was closed before finishing.',
   'auth/cancelled-popup-request': 'The sign-in window was closed before finishing.',
   'auth/account-exists-with-different-credential': 'You already signed in to Empire with a different service using this email. Use that one.',
