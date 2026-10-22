@@ -11,7 +11,6 @@ export function AccountModal() {
   const [tab, setTab] = useState<'in' | 'up'>('in');
   const [name, setName] = useState('');
   const [pw, setPw] = useState('');
-  const [keep, setKeep] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const api = accounts();
@@ -21,7 +20,7 @@ export function AccountModal() {
     if (!api) return;
     setBusy(true);
     setError('');
-    const r = tab === 'in' ? await api.logIn(name, pw) : await api.signUp(name, pw, keep);
+    const r = tab === 'in' ? await api.logIn(name, pw) : await api.signUp(name, pw, true);
     setBusy(false);
     if (!r.ok) return setError(r.error || 'That didn’t work.');
     setPw('');
@@ -41,7 +40,7 @@ export function AccountModal() {
             <button type="button" className={tab === 'up' ? 'on' : ''} onClick={() => setTab('up')}><UserPlus size={14} /> New account</button>
           </div>
           <p className="muted" style={{ margin: 0, fontSize: 13 }}>
-            One account for Empire and every SilverNinja game: username, gold and trophies. It’s kept in this browser; the password is never sent anywhere.
+            One account for Empire and every SilverNinja game: your username, trophies and achievements. It’s kept in this browser; the password is never sent anywhere.
           </p>
           <label className="field">Username
             <input className="input" value={name} onChange={(e) => setName(e.target.value)} autoComplete="username" list="known-accounts" required />
@@ -50,11 +49,6 @@ export function AccountModal() {
           <label className="field">Password
             <input className="input" type="password" value={pw} onChange={(e) => setPw(e.target.value)} autoComplete={tab === 'in' ? 'current-password' : 'new-password'} required />
           </label>
-          {tab === 'up' && (
-            <label style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 14 }}>
-              <input type="checkbox" checked={keep} onChange={(e) => setKeep(e.target.checked)} /> Keep the gold and progress I have as a guest
-            </label>
-          )}
           {error && <div className="bad" style={{ fontSize: 14 }}>{error}</div>}
           <button className="btn primary big" disabled={busy}>{busy ? 'One moment…' : tab === 'in' ? 'Sign in' : 'Make my account'}</button>
         </form>

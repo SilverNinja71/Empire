@@ -29,7 +29,7 @@ export const SEED_THREADS: ForumThread[] = [
         votes: 0,
         body: `Welcome! Empire is the home for every **SilverNinja game**, plus anything you make or add yourself.
 
-- **Store**: browse, wishlist and rate games. Your username, gold and trophies carry across every game.
+- **Store**: browse, wishlist and rate games. Your games, trophies and achievements carry across every game.
 - **Library**: what you've played, your wishlist, your trophies and the worlds you've built.
 - **✨ Make Your Own Game** (bottom left): sculpt a 3D world or paint a 2D pixel map, then test-play it.
 - **Add a Game** (top right): add any web game from a Git repo, an XML file or a direct link.

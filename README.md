@@ -1,6 +1,6 @@
 # SilverNinja Games
 
-The front page for a set of browser games that share one account (username, sign-in, gold and trophies).
+The front page for a set of browser games that share one account (username, sign-in, trophies and achievements).
 Play at https://silverninja71.github.io/Empire/.
 
 Each game lives in its own repo:

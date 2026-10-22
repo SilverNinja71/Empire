@@ -297,7 +297,6 @@ label.field .hint { font-weight: 400; color: var(--muted); }
   border-radius: 999px; border: 1px solid var(--border);
   background: var(--panel-2); font-weight: 700; font-size: 13px; white-space: nowrap;
 }
-.wallet .gold { color: #fbbf24; display: inline-flex; align-items: center; gap: 4px; }
 .wallet .lvl { display: inline-flex; align-items: center; gap: 4px; color: var(--accent-2); }
 [data-theme="retro"] .wallet { border-radius: 0; box-shadow: var(--bevel); border: 0; }
 .avatar {
@@ -620,7 +619,6 @@ pre.code { margin: 0; padding: 14px; border-radius: var(--radius-sm); background
 /* ---------- Responsive ---------- */
 @media (max-width: 1180px) {
   .topbar .nav a span { display: none; }
-  .wallet .lvl { display: none; }
   .game-layout { grid-template-columns: 1fr; }
 }
 @media (max-width: 900px) {

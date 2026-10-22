@@ -43,7 +43,6 @@ export const accounts = (): GameAccountsAPI | undefined => window.GameAccounts;
 
 interface Profile {
   username?: string;
-  gold?: number;
   level?: number;
   xp?: number;
   stats?: { matches?: number; wins?: number };
@@ -52,7 +51,6 @@ interface Profile {
 export interface AccountState {
   signedIn: boolean;
   username: string;
-  gold: number;
   level: number;
   trophies: Trophy[];
   catalog: Trophy[];
@@ -69,7 +67,6 @@ function snapshot(): AccountState {
   return {
     signedIn: !!cur,
     username: cur?.username || p?.username || 'Guest',
-    gold: Number(p?.gold) || 0,
     level: Math.max(1, Number(p?.level) || 1),
     trophies,
     catalog: api?.trophies.catalog() ?? [],
@@ -80,7 +77,7 @@ function snapshot(): AccountState {
 }
 
 const same = (a: AccountState, b: AccountState) =>
-  a.signedIn === b.signedIn && a.username === b.username && a.gold === b.gold && a.level === b.level &&
+  a.signedIn === b.signedIn && a.username === b.username && a.level === b.level &&
   a.trophies.length === b.trophies.length && a.title?.id === b.title?.id && a.matches === b.matches;
 
 /** Live view of the shared account: updates when a game (in any tab) changes it. */

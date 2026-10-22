@@ -1,4 +1,4 @@
-import { Activity as ActivityIcon, Box, Coins, Gamepad2, Heart, LogIn, MessagesSquare, Palette, Pencil, Play, Plus, Rocket, Sparkles, Star, Trash2, Trophy } from 'lucide-react';
+import { Activity as ActivityIcon, Box, Gamepad2, Heart, LogIn, MessagesSquare, Palette, Pencil, Play, Plus, Rocket, Sparkles, Star, Trash2, Trophy } from 'lucide-react';
 import type { ActivityKind } from '../lib/types';
 import { useAllGames, useStore } from '../lib/store';
 import { accounts, useAccount } from '../lib/account';
@@ -68,7 +68,6 @@ export function Library() {
       </div>
 
       <div className="stat-row" style={{ marginTop: 16 }}>
-        <div className="panel stat"><span><Coins size={12} /> Gold</span><b style={{ color: '#fbbf24' }}>{acc.gold.toLocaleString()}</b></div>
         <div className="panel stat"><span>Level</span><b>{acc.level}</b></div>
         <div className="panel stat"><span><Trophy size={12} /> Trophies</span><b>{acc.trophies.length}</b></div>
         <div className="panel stat"><span><Gamepad2 size={12} /> Games played</span><b>{recent.length}</b></div>

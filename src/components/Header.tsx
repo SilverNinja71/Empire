@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { Activity, Bell, Coins, Library, LogIn, LogOut, Menu, MessagesSquare, Palette, Plus, Search, Store, Trophy, User } from 'lucide-react';
+import { Activity, Bell, Library, LogIn, LogOut, Menu, MessagesSquare, Palette, Plus, Search, Store, Trophy, User } from 'lucide-react';
 import { useAllGames, useStore } from '../lib/store';
 import { href, navigate, useRoute } from '../lib/router';
 import { accounts, useAccount } from '../lib/account';
@@ -234,7 +234,7 @@ function ProfileMenu() {
           </div>
         </div>
         <div style={{ display: 'flex', gap: 8, padding: '0 6px 10px' }}>
-          <span className="badge"><Coins size={12} /> {acc.gold.toLocaleString()} gold</span>
+          <span className="badge">Level {acc.level}</span>
           <span className="badge"><Trophy size={12} /> {acc.trophies.length} trophies</span>
         </div>
         <a className="side-link" href={href('/library')} onClick={() => setOpen(false)}><User size={16} /> Profile & library</a>
@@ -277,8 +277,7 @@ export function Header() {
         </button>
         <ThemeSwitcher />
         <Notifications />
-        <a className="wallet" href={href('/library')} title="Your gold and level (shared with every game)" style={{ color: 'inherit', textDecoration: 'none' }}>
-          <span className="gold"><Coins size={15} /> {acc.gold.toLocaleString()}</span>
+        <a className="wallet" href={href('/library')} title={`Level ${acc.level} · ${acc.trophies.length} trophies`} style={{ color: 'inherit', textDecoration: 'none' }}>
           <span className="lvl"><Trophy size={14} /> Lv {acc.level}</span>
         </a>
         <ProfileMenu />

@@ -11,12 +11,13 @@ import { Modal } from '../components/ui';
 import { Cover } from '../components/Cover';
 
 type Source = 'git' | 'xml' | 'link';
-type Kind = 'unity' | 'godot' | 'itch' | 'webgl';
+type Kind = 'unity' | 'godot' | 'itch' | 'firebase' | 'webgl';
 
 const KINDS: { id: Kind; label: string; engine: Engine; type: DeployType; hint: string }[] = [
   { id: 'unity', label: 'Unity WebGL build', engine: 'Unity', type: 'webgl', hint: 'The index.html of a Unity WebGL build' },
   { id: 'godot', label: 'Godot HTML5 export', engine: 'Godot', type: 'html5', hint: 'The .html file Godot exported' },
   { id: 'itch', label: 'itch.io embed', engine: 'Custom', type: 'iframe', hint: 'From itch.io: Distribute → Embed game → copy the src link' },
+  { id: 'firebase', label: 'Firebase Hosting', engine: 'Custom', type: 'iframe', hint: 'Direct URL to a Firebase-hosted game (e.g. https://your-project.web.app or .firebaseapp.com)' },
   { id: 'webgl', label: 'Custom WebGL / HTML5', engine: 'ThreeJS', type: 'webgl', hint: 'Any page that runs the game' },
 ];
 
@@ -51,6 +52,13 @@ export function pagesUrl(r: NonNullable<ReturnType<typeof parseRepo>>) {
   if (r.host === 'github') return r.repo.toLowerCase() === `${owner}.github.io` ? `https://${owner}.github.io/` : `https://${owner}.github.io/${r.repo}/`;
   return `https://${owner}.gitlab.io/${r.repo}/`;
 }
+
+/** Firebase Hosting serves sites at <project>.web.app and <project>.firebaseapp.com */
+export const isFirebaseUrl = (url: string) => /^https?:\/\/[a-z0-9-]+\.(web\.app|firebaseapp\.com)(?::\d+)?(?:[/?#]|$)/i.test(url.trim());
+
+/** Sandbox for the test window. Firebase games may open sign-in popups (Firebase Auth), so they also get allow-popups. */
+export const sandboxFor = (url: string) =>
+  'allow-scripts allow-same-origin allow-pointer-lock allow-forms' + (isFirebaseUrl(url) ? ' allow-popups allow-popups-to-escape-sandbox' : '');
 
 const titleCase = (s: string) => s.replace(/[-_]+/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
 
@@ -295,9 +303,11 @@ export default function AddGameModal() {
                 {KINDS.map((k) => <button key={k.id} className={'chip' + (kind === k.id ? ' on' : '')} onClick={() => setKind(k.id)}>{k.label}</button>)}
               </div>
               <label className="field">Address of the game
-                <input className="input" placeholder={kind === 'itch' ? 'https://itch.io/embed-upload/1234567' : 'https://cdn.example.com/games/my-game/index.html'} value={linkUrl} onChange={(e) => setLinkUrl(e.target.value)} />
+                <input className="input" placeholder={kind === 'itch' ? 'https://itch.io/embed-upload/1234567' : kind === 'firebase' ? 'https://your-project.web.app' : 'https://cdn.example.com/games/my-game/index.html'} value={linkUrl} onChange={(e) => { setLinkUrl(e.target.value); if (isFirebaseUrl(e.target.value)) setKind('firebase'); }} />
                 <span className="hint">{KINDS.find((k) => k.id === kind)!.hint}</span>
                 {linkUrl && !isHttpUrl(linkUrl.trim()) && <span className="bad" style={{ fontWeight: 400 }}>Use a full web address starting with https://</span>}
+                {isFirebaseUrl(linkUrl) && <span className="ok" style={{ fontWeight: 400, display: 'flex', gap: 6, alignItems: 'center' }}><CircleCheck size={14} /> Firebase Hosting detected: the test window allows its sign-in popups.</span>}
+                {kind === 'firebase' && linkUrl && isHttpUrl(linkUrl.trim()) && !isFirebaseUrl(linkUrl) && <span className="warn" style={{ fontWeight: 400 }}>This doesn’t look like a Firebase address (…web.app or …firebaseapp.com). It will still work if it’s a web game.</span>}
               </label>
             </div>
           )}
@@ -325,6 +335,7 @@ export default function AddGameModal() {
           </label>
           <label className="field full">Launch link
             <input className="input" value={d.sourceUrl} onChange={(e) => set({ sourceUrl: e.target.value })} />
+            {isFirebaseUrl(d.sourceUrl) && <span className="hint">Firebase Hosting</span>}
           </label>
           <div className="field full">Genre tags <span className="hint">(press Enter after each; up to 8)</span>
             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
@@ -397,7 +408,7 @@ export default function AddGameModal() {
                   key={sandboxKey}
                   src={d.sourceUrl}
                   title="Game test"
-                  sandbox="allow-scripts allow-same-origin allow-pointer-lock allow-forms"
+                  sandbox={sandboxFor(d.sourceUrl)}
                   allow="fullscreen; gamepad; autoplay"
                   onLoad={() => setSandbox('loaded')}
                 />

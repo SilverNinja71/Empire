@@ -70,7 +70,7 @@ export const useStore = create<State>()(
       threads: SEED_THREADS,
       activity: [],
       notices: [
-        { id: 'welcome', text: 'Welcome to Empire! Your games, gold and trophies from every SilverNinja game show up here.', href: '#/library', at: Date.now(), read: false },
+        { id: 'welcome', text: 'Welcome to Empire! Your games, trophies and achievements from every SilverNinja game show up here.', href: '#/library', at: Date.now(), read: false },
       ],
       projects: [],
       welcomed: false,
