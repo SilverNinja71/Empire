@@ -29,3 +29,8 @@ venv/
 *.log
 test_*.js
 scratch/
+
+# Empire build
+node_modules/
+dist/
+*.tsbuildinfo

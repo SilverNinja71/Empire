@@ -85,6 +85,21 @@ class Handler(http.server.SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=DIRECTORY, **kwargs)
 
+    def translate_path(self, path):
+        """The hub is a built site: /Empire/... comes from Empire/dist (after `npm run build`),
+        then Empire/public (so shared/accounts.js works for the games even before a build)."""
+        real = super().translate_path(path)
+        hub_root = os.path.join(DIRECTORY, HUB.rstrip("/"))
+        if not (real == hub_root or real.startswith(hub_root + os.sep)):
+            return real
+        rest = os.path.relpath(real, hub_root)
+        rest = "" if rest == "." else rest
+        for base in ("dist", "public"):
+            candidate = os.path.join(HUB_DIR, base, rest)
+            if os.path.exists(candidate):
+                return candidate
+        return real
+
     def accepts_gzip(self):
         for part in self.headers.get("Accept-Encoding", "").split(","):
             name, _, params = part.strip().partition(";")
@@ -223,6 +238,8 @@ def run():
         print(f"Error: Could not bind to any port from {PORT} to {PORT + 19}.")
         sys.exit(1)
 
+    if not os.path.isfile(os.path.join(HUB_DIR, "dist", "index.html")):
+        print("⚠️  The Empire hub isn't built yet. Run `npm install` and `npm run build` in", HUB_DIR)
     root = f"http://localhost:{port}/"
     url = root + HUB
     width = max(len(name) for name, _, _ in GAMES) + 1

@@ -1,0 +1,187 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  The Empire store reads this file. Each <empireGame> is one game.
+  To add a game for everyone: use "Add a Game" on the site, press "Copy XML",
+  paste it below, and push. <rank> sets the "Popular" order (1 = first).
+-->
+<empireCatalog version="1.0">
+  <empireGame version="1.0" id="penguin-league">
+    <metadata>
+      <title>Penguin League</title>
+      <author>SilverNinja71</author>
+      <version>1.0.0</version>
+      <engine>ThreeJS</engine>
+      <description>Rocket League-style soccer with jetpack penguins. Boost, belly-dive and curve shots against bots from Easy to God, or start an online room and invite up to three friends.</description>
+    </metadata>
+    <deployment>
+      <type>webgl</type>
+      <sourceUrl>../Penguin-League/</sourceUrl>
+      <repository>https://github.com/SilverNinja71/Penguin-League</repository>
+    </deployment>
+    <tags>
+      <tag>Sports</tag>
+      <tag>3D</tag>
+      <tag>Multiplayer</tag>
+      <tag>Arcade</tag>
+    </tags>
+    <media>
+      <cover>covers/penguin-league.jpg</cover>
+      <screenshot>covers/penguin-league-2.jpg</screenshot>
+      <screenshot>covers/penguin-league-3.jpg</screenshot>
+    </media>
+    <details>
+      <modes>singleplayer,multiplayer</modes>
+      <platforms>desktop,mobile</platforms>
+      <players>1–4</players>
+      <released>2026-10-21</released>
+      <updated>2026-10-21</updated>
+      <rank>1</rank>
+      <featured>true</featured>
+      <icon>penguin-league</icon>
+      <palette>#1e40af,#38bdf8</palette>
+    </details>
+  </empireGame>
+
+  <empireGame version="1.0" id="mace-pvp">
+    <metadata>
+      <title>Spear-Mace PVP</title>
+      <author>SilverNinja71</author>
+      <version>1.0.0</version>
+      <engine>Custom</engine>
+      <description>Fast 2D aerial fighting inspired by Minecraft's Mace and Spear. Slam, dash and duel bots in 1v1, 2v2 and 5v5 arenas, climb the tiers, and spend your gold on skins.</description>
+    </metadata>
+    <deployment>
+      <type>html5</type>
+      <sourceUrl>../mace-pvp/</sourceUrl>
+      <repository>https://github.com/SilverNinja71/mace-pvp</repository>
+    </deployment>
+    <tags>
+      <tag>Fighting</tag>
+      <tag>2D</tag>
+      <tag>PvP</tag>
+      <tag>Arcade</tag>
+    </tags>
+    <media>
+      <cover>covers/mace-pvp.jpg</cover>
+      <screenshot>covers/mace-pvp-2.jpg</screenshot>
+      <screenshot>covers/mace-pvp-3.jpg</screenshot>
+    </media>
+    <details>
+      <modes>singleplayer,multiplayer</modes>
+      <platforms>desktop,mobile</platforms>
+      <released>2026-10-10</released>
+      <updated>2026-10-21</updated>
+      <rank>2</rank>
+      <featured>true</featured>
+      <icon>mace-pvp</icon>
+      <palette>#7c2d12,#f59e0b</palette>
+    </details>
+  </empireGame>
+
+  <empireGame version="1.0" id="penguin-life">
+    <metadata>
+      <title>Penguin Life</title>
+      <author>SilverNinja71</author>
+      <version>1.0.0</version>
+      <engine>Custom</engine>
+      <description>A Duck Life-style adventure. Train your penguin in swimming, waddling, climbing, jumping and hunting, feed it fish, then race from the Zoo to the Arctic, the North Pole and beyond.</description>
+    </metadata>
+    <deployment>
+      <type>html5</type>
+      <sourceUrl>../Penguin-Life/</sourceUrl>
+      <repository>https://github.com/SilverNinja71/Penguin-Life</repository>
+    </deployment>
+    <tags>
+      <tag>Adventure</tag>
+      <tag>2D</tag>
+      <tag>Casual</tag>
+      <tag>Racing</tag>
+    </tags>
+    <media>
+      <cover>covers/penguin-life.jpg</cover>
+      <screenshot>covers/penguin-life-2.jpg</screenshot>
+      <screenshot>covers/penguin-life-3.jpg</screenshot>
+    </media>
+    <details>
+      <modes>singleplayer,multiplayer</modes>
+      <platforms>desktop</platforms>
+      <released>2026-10-12</released>
+      <updated>2026-10-21</updated>
+      <rank>3</rank>
+      <featured>true</featured>
+      <icon>penguin-life</icon>
+      <palette>#0e7490,#a5f3fc</palette>
+    </details>
+  </empireGame>
+
+  <empireGame version="1.0" id="penguintrack">
+    <metadata>
+      <title>Penguintrack</title>
+      <author>SilverNinja71</author>
+      <version>1.0.0</version>
+      <engine>ThreeJS</engine>
+      <description>Snowy Trackmania-style time attack. Chase the Emperor medal across a 35-track campaign, build your own tracks in the editor, race ghosts, and train an AI driver in the lab.</description>
+    </metadata>
+    <deployment>
+      <type>webgl</type>
+      <sourceUrl>../Penguin-Track/</sourceUrl>
+      <repository>https://github.com/SilverNinja71/Penguin-Track</repository>
+    </deployment>
+    <tags>
+      <tag>Racing</tag>
+      <tag>3D</tag>
+      <tag>Level Editor</tag>
+      <tag>Time Attack</tag>
+    </tags>
+    <media>
+      <cover>covers/penguintrack.jpg</cover>
+      <screenshot>covers/penguintrack-2.jpg</screenshot>
+    </media>
+    <details>
+      <modes>singleplayer,multiplayer</modes>
+      <platforms>desktop,mobile</platforms>
+      <released>2026-10-19</released>
+      <updated>2026-10-21</updated>
+      <rank>4</rank>
+      <featured>true</featured>
+      <icon>penguintrack</icon>
+      <palette>#be123c,#e0f2fe</palette>
+    </details>
+  </empireGame>
+
+  <empireGame version="1.0" id="elite-ball-brawl">
+    <metadata>
+      <title>Elite Ball Brawl</title>
+      <author>SilverNinja71</author>
+      <version>1.0.0</version>
+      <engine>ThreeJS</engine>
+      <description>A 3D arena brawler in the style of The Strongest Battlegrounds. Combos, dashes, ultimates and ragdolls against bots, or against friends with a room code.</description>
+    </metadata>
+    <deployment>
+      <type>webgl</type>
+      <sourceUrl>../Elite-Ball-Brawl/</sourceUrl>
+      <repository>https://github.com/SilverNinja71/Elite-Ball-Brawl</repository>
+    </deployment>
+    <tags>
+      <tag>Fighting</tag>
+      <tag>3D</tag>
+      <tag>Multiplayer</tag>
+      <tag>Action</tag>
+    </tags>
+    <media>
+      <cover>covers/elite-ball-brawl.jpg</cover>
+      <screenshot>covers/elite-ball-brawl-2.jpg</screenshot>
+      <screenshot>covers/elite-ball-brawl-3.jpg</screenshot>
+    </media>
+    <details>
+      <modes>singleplayer,multiplayer</modes>
+      <platforms>desktop,mobile</platforms>
+      <released>2026-10-20</released>
+      <updated>2026-10-21</updated>
+      <rank>5</rank>
+      <featured>true</featured>
+      <icon>elite-ball-brawl</icon>
+      <palette>#4c1d95,#facc15</palette>
+    </details>
+  </empireGame>
+</empireCatalog>

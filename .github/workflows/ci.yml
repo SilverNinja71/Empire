@@ -16,8 +16,22 @@ jobs:
       - name: Set up Node
         uses: actions/setup-node@v4
         with:
-          node-version: '22'
+          node-version: '24'
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Type Check
+        run: npm run typecheck
+
+      - name: Build
+        run: npm run build
 
       - name: Shared Accounts Syntax Check
         # Every game loads this file from ../Empire/shared/accounts.js
-        run: node --check shared/accounts.js
+        run: node --check public/shared/accounts.js
+
+      - name: Game Catalog Check
+        # games.xml must be well-formed XML
+        run: python3 -c "import xml.dom.minidom,sys; xml.dom.minidom.parse('public/games.xml'); print('games.xml OK')"
