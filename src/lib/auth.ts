@@ -24,7 +24,9 @@ interface AuthUser {
 
 export const useAuth = create<{ user: AuthUser | null; ready: boolean }>(() => ({ user: null, ready: !firebaseReady }));
 
-let authPromise: Promise<{ auth: Auth; mod: typeof import('firebase/auth') }> | null = null;
+type Lib = { auth: Auth; mod: typeof import('firebase/auth') };
+let authPromise: Promise<Lib> | null = null;
+let loaded: Lib | null = null; // ready to use without waiting (keeps the click's permission to open a window)
 
 /** Load Firebase only when it's needed (it's a big download). */
 function getAuthLib() {
@@ -38,9 +40,8 @@ function getAuthLib() {
       useAuth.setState({ user: u ? describe(u) : null, ready: true });
       if (u) linkGameAccount(u, false);
     });
-    // Coming back from a redirect sign-in (used when popups are blocked)
-    mod.getRedirectResult(auth).catch(() => undefined);
-    return { auth, mod };
+    loaded = { auth, mod };
+    return loaded;
   })();
   return authPromise;
 }
@@ -70,6 +71,8 @@ export function startAuth() {
 
 const MESSAGES: Record<string, string> = {
   'auth/configuration-not-found': 'Sign-in isn’t switched on in Firebase yet (Authentication → Get started).',
+  'auth/popup-blocked': 'Your browser blocked the sign-in window. Allow pop-ups for this site (look for the blocked-window icon in the address bar), then try again.',
+  'auth/operation-not-supported-in-environment': 'This browser can’t open the sign-in window. Try Chrome, Edge, Safari or Firefox.',
   'auth/popup-closed-by-user': 'The sign-in window was closed before finishing.',
   'auth/cancelled-popup-request': 'The sign-in window was closed before finishing.',
   'auth/account-exists-with-different-credential': 'You already signed in to Empire with a different service using this email. Use that one.',
@@ -78,27 +81,24 @@ const MESSAGES: Record<string, string> = {
   'auth/network-request-failed': 'No connection to the sign-in service. Check your internet and try again.',
 };
 
+/**
+ * Opens the provider's sign-in window. Browsers only allow a new window straight after a click,
+ * so when Firebase is already loaded the window opens before anything else is awaited.
+ * (A full-page redirect isn't used: browsers now block the cross-site storage it needs,
+ * because Firebase's sign-in page lives on a different site from github.io.)
+ */
 export async function signInWith(id: ProviderId): Promise<{ ok: boolean; error?: string; name?: string }> {
   try {
-    const { auth, mod } = await getAuthLib();
+    const { auth, mod } = loaded ?? (await getAuthLib());
     const provider =
       id === 'google' ? new mod.GoogleAuthProvider() :
       id === 'github' ? new mod.GithubAuthProvider() :
       new mod.OAuthProvider('microsoft.com');
     if (id === 'microsoft') (provider as InstanceType<typeof mod.OAuthProvider>).setCustomParameters({ prompt: 'select_account' });
     if (id === 'google') (provider as InstanceType<typeof mod.GoogleAuthProvider>).setCustomParameters({ prompt: 'select_account' });
-    try {
-      const res = await mod.signInWithPopup(auth, provider);
-      linkGameAccount(res.user, true);
-      return { ok: true, name: describe(res.user).name };
-    } catch (e) {
-      const code = (e as { code?: string }).code ?? '';
-      if (code === 'auth/popup-blocked' || code === 'auth/operation-not-supported-in-environment') {
-        await mod.signInWithRedirect(auth, provider); // the page leaves and comes back signed in
-        return { ok: true };
-      }
-      throw e;
-    }
+    const res = await mod.signInWithPopup(auth, provider);
+    linkGameAccount(res.user, true);
+    return { ok: true, name: describe(res.user).name };
   } catch (e) {
     const code = (e as { code?: string }).code ?? '';
     return { ok: false, error: MESSAGES[code] ?? (e as Error).message ?? 'Sign-in didn’t work. Try again.' };
