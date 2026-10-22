@@ -70,7 +70,7 @@ function Play3D({ world, onExit }: { world: World3D; onExit: () => void }) {
               collected={collected}
               firstPerson={fp}
               onCollect={(id) => setCollected((c) => new Set(c).add(id))}
-              onGoal={() => setGoal((g) => g ?? (performance.now() - t0) / 1000)}
+              onGoal={() => setGoal((g) => { if (g == null) useStore.getState().completeLevel(); return g ?? (performance.now() - t0) / 1000; })}
             />
           </WorldScene>
         </Suspense>

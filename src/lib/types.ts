@@ -37,7 +37,8 @@ export interface Game {
   addedAt?: number;
 }
 
-export type ThemeId = 'obsidian' | 'neon' | 'retro' | 'frosted' | 'steam';
+/** A built-in theme id from lib/themes.ts, or 'custom' for the one made in the Theme Studio */
+export type ThemeId = string;
 
 export interface ForumPost {
   id: string;

@@ -419,7 +419,7 @@ export default function Studio3D({ projectId }: { projectId?: string }) {
                   collected={collected}
                   firstPerson={firstPerson}
                   onCollect={(id) => setCollected((c) => new Set(c).add(id))}
-                  onGoal={() => setGoal((g) => g ?? (performance.now() - startAt) / 1000)}
+                  onGoal={() => setGoal((g) => { if (g == null) useStore.getState().completeLevel(); return g ?? (performance.now() - startAt) / 1000; })}
                 />
               )}
             </WorldScene>

@@ -1,0 +1,44 @@
+/* Retro plumber world: pixel cards with a grass-and-dirt top, pipes and a peeking plant at the bottom */
+[data-deco="mario"] { image-rendering: pixelated; }
+[data-deco="mario"] .card {
+  border: 4px solid #000;
+  box-shadow: 4px 4px 0 #000, inset 0 0 0 3px #fff3c4;
+  overflow: visible;
+}
+[data-deco="mario"] .card .cover { margin-top: 18px; border-top: 4px solid #000; }
+[data-deco="mario"] .card .body { padding-bottom: 34px; }
+[data-deco="mario"] .card:hover { transform: none; box-shadow: 6px 6px 0 #000, inset 0 0 0 3px #fff3c4; }
+[data-deco="mario"] .card-slot { height: 330px; }
+
+/* Grass fringe over a dirt block along the top of each card */
+.mario-ground {
+  position: absolute; left: 0; right: 0; top: 0; height: 22px;
+  background:
+    linear-gradient(#0b3d12 0 3px, transparent 3px) top / 100% 3px no-repeat,
+    repeating-linear-gradient(90deg, #43b047 0 6px, #2f8f36 6px 9px, #43b047 9px 15px, #5ac05e 15px 18px) top 3px left / 100% 7px no-repeat,
+    repeating-linear-gradient(90deg, #b0682a 0 9px, #8f5220 9px 12px, #b0682a 12px 21px, #c97d38 21px 24px) bottom / 100% 12px no-repeat;
+  image-rendering: pixelated;
+}
+.mario-item { position: absolute; right: 12px; top: -26px; animation: mario-hop 1.6s steps(4) infinite; filter: drop-shadow(2px 2px 0 rgba(0, 0, 0, 0.4)); }
+@keyframes mario-hop { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-6px); } }
+.mario-pipe { position: absolute; bottom: -4px; display: grid; justify-items: center; }
+.mario-pipe.left { left: 8px; }
+.mario-pipe.right { right: 8px; }
+.mario-pipe .piranha { margin-bottom: -6px; animation: piranha 4s steps(6) infinite; transform-origin: bottom; }
+@keyframes piranha { 0%, 30%, 100% { transform: translateY(18px); clip-path: inset(0 0 100% 0); } 45%, 80% { transform: translateY(0); clip-path: inset(0 0 0 0); } }
+
+/* ? blocks for badges, pixel title font */
+[data-deco="mario"] .badge {
+  border-radius: 0; border: 2px solid #3b2a0e; background: #fbd000; color: #3b2a0e;
+  font-family: "Press Start 2P", monospace; font-size: 8px; padding: 4px 6px; box-shadow: inset -2px -2px 0 #c99a00, inset 2px 2px 0 #ffe86b;
+}
+[data-deco="mario"] .badge.free { background: #43b047; color: #fff; border-color: #0b3d12; box-shadow: inset -2px -2px 0 #2f8f36, inset 2px 2px 0 #7ee08a; }
+[data-deco="mario"] .badge.accent { background: #e52521; color: #fff; border-color: #6b0f0d; box-shadow: inset -2px -2px 0 #a3150f, inset 2px 2px 0 #ff6b5c; }
+[data-deco="mario"] .card h3 { font-size: 12px; line-height: 1.6; }
+[data-deco="mario"] .btn { border: 3px solid #000; box-shadow: 3px 3px 0 #000; border-radius: 0; }
+[data-deco="mario"] .btn:active { transform: translate(2px, 2px); box-shadow: 1px 1px 0 #000; }
+[data-deco="mario"] .chip { border-radius: 0; border: 2px solid #000; }
+[data-deco="mario"] .panel { border: 4px solid #000; box-shadow: 4px 4px 0 #000; }
+[data-deco="mario"] .hero { border: 4px solid #000; box-shadow: 6px 6px 0 #000; border-radius: 0; }
+[data-deco="mario"] .topbar { border-bottom: 4px solid #000; }
+[data-deco="mario"] .sidebar { background: rgba(251, 243, 213, 0.94); border-right: 4px solid #000; }

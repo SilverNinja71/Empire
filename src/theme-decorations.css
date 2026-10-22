@@ -1,0 +1,135 @@
+/* ---------- Theme scenery (ThemeBackdrop) ---------- */
+.backdrop { position: fixed; inset: 0; z-index: 0; pointer-events: none; overflow: hidden; --scroll: 0; }
+.backdrop .bd-svg, .backdrop .bd-fill { position: absolute; inset: 0; width: 100%; height: 100%; }
+.backdrop .px { will-change: transform; }
+.backdrop .px1 { transform: translate3d(0, calc(var(--scroll) * -0.02px), 0); }
+.backdrop .px2 { transform: translate3d(0, calc(var(--scroll) * -0.04px), 0); }
+.backdrop .px3 { transform: translate3d(0, calc(var(--scroll) * -0.07px), 0); }
+.backdrop .px4 { transform: translate3d(0, calc(var(--scroll) * -0.1px), 0); }
+.backdrop .px5 { transform: translate3d(0, calc(var(--scroll) * -0.14px), 0); }
+.app { position: relative; z-index: 1; }
+[data-deco]:not([data-deco="none"]):not([data-deco="custom"]) body { background: var(--bg); }
+
+.bd-sunset .embers circle { animation: ember 9s linear infinite; opacity: 0; }
+@keyframes ember { 0% { transform: translateY(0); opacity: 0; } 15% { opacity: 0.9; } 100% { transform: translateY(-420px) translateX(40px); opacity: 0; } }
+.drift { animation: drift 60s linear infinite alternate; }
+.drift.slow { animation-duration: 90s; }
+@keyframes drift { from { transform: translateX(-40px); } to { transform: translateX(60px); } }
+.qblock { animation: qbob 2.4s ease-in-out infinite; transform-box: fill-box; }
+@keyframes qbob { 50% { transform: translateY(-8px); } }
+.twinkle { animation: twinkle 3.2s ease-in-out infinite; }
+@keyframes twinkle { 50% { opacity: 0.25; } }
+.wisps circle { animation: wisp 9s ease-in-out infinite; opacity: 0.8; }
+@keyframes wisp { 0% { transform: translate(0, 0); opacity: 0; } 20% { opacity: 0.85; } 100% { transform: translate(30px, -260px); opacity: 0; } }
+.pumpkin { animation: pumpkin 4s ease-in-out infinite; transform-box: fill-box; transform-origin: center bottom; }
+@keyframes pumpkin { 50% { transform: translateY(-6px) rotate(-3deg); } }
+.leaves { position: absolute; inset: 0; overflow: hidden; }
+.leaves .leaf { position: absolute; top: -40px; animation: leaf-fall linear infinite; opacity: 0.85; }
+@keyframes leaf-fall { 0% { transform: translate(0, -40px) rotate(0deg); } 50% { transform: translate(60px, 50vh) rotate(200deg); } 100% { transform: translate(-30px, 105vh) rotate(420deg); } }
+.spin-slow { animation: spin 120s linear infinite; transform-box: fill-box; transform-origin: center; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.bob { animation: bob 5s ease-in-out infinite; }
+@keyframes bob { 50% { transform: translateY(6px) rotate(2deg); } }
+.waves path { animation: wave 8s ease-in-out infinite alternate; }
+.waves path + path { animation-duration: 6s; }
+@keyframes wave { to { transform: translateX(-100px); } }
+.motes circle { animation: mote 14s ease-in-out infinite; opacity: 0.7; }
+@keyframes mote { 0%, 100% { transform: translate(0, 0); opacity: 0.2; } 50% { transform: translate(40px, -60px); opacity: 0.9; } }
+.flames path { animation: flame 2.2s ease-in-out infinite; transform-box: fill-box; transform-origin: center bottom; opacity: 0.75; }
+@keyframes flame { 0%, 100% { transform: scaleY(1) skewX(0); opacity: 0.6; } 50% { transform: scaleY(1.18) skewX(6deg); opacity: 0.95; } }
+.sparks circle { animation: twinkle 1.8s ease-in-out infinite; }
+.snow { position: absolute; inset: 0; overflow: hidden; }
+.snow i { position: absolute; top: -10px; border-radius: 50%; background: #fff; opacity: 0.85; animation: snow linear infinite; box-shadow: 0 0 6px rgba(255, 255, 255, 0.8); }
+@keyframes snow { to { transform: translate(40px, 105vh); } }
+.rink { filter: drop-shadow(0 0 8px #38bdf8); }
+.holo { position: absolute; inset: -20%; background: conic-gradient(from 0deg, rgba(250, 204, 21, 0.1), rgba(244, 114, 182, 0.1), rgba(96, 165, 250, 0.1), rgba(52, 211, 153, 0.1), rgba(250, 204, 21, 0.1)); animation: spin 40s linear infinite; filter: blur(40px); }
+
+/* Readable headings over bright scenery */
+[data-deco="sunset"] .page-head h1, [data-deco="sunset"] .section-title h2, [data-deco="sunset"] .section-title .muted { text-shadow: 0 2px 12px rgba(20, 5, 8, 0.85); }
+[data-deco="mario"] .page-head h1, [data-deco="mario"] .section-title h2 { color: #fff; text-shadow: 3px 3px 0 #000; }
+[data-deco="mario"] .section-title .muted, [data-deco="mario"] .page-head p { color: #fff; text-shadow: 2px 2px 0 #000; }
+[data-deco="onepiece"] .page-head h1, [data-deco="onepiece"] .section-title h2 { color: #f7c844; text-shadow: 2px 2px 0 #3b2410; font-size: 26px; }
+[data-deco="onepiece"] .section-title .muted, [data-deco="onepiece"] .page-head p { color: #f5e6c8; }
+[data-deco="ghibli"] .section-title h2, [data-deco="ghibli"] .page-head h1 { color: #2f4a32; text-shadow: 0 1px 8px rgba(254, 250, 224, 0.9); }
+
+/* ---------- Card decorations (CardDeco) ---------- */
+.card { border-width: var(--border-w, 1px); }
+.card-deco { position: absolute; inset: 0; pointer-events: none; z-index: 3; }
+
+/* October: leaves in the corners, lantern glow on hover */
+.oc-leaf { position: absolute; filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.5)); }
+.oc-leaf.tl { top: -6px; left: -6px; transform: rotate(-30deg); }
+.oc-leaf.br { bottom: -6px; right: -4px; transform: rotate(140deg); }
+[data-deco="october"] .card:hover { box-shadow: 0 0 0 1px #FF7B54, 0 0 30px rgba(255, 123, 84, 0.6), 0 0 70px rgba(139, 92, 246, 0.35); }
+[data-deco="october"] .card { background: linear-gradient(180deg, rgba(46, 33, 80, 0.95), rgba(24, 18, 43, 0.95)); }
+
+/* Pirates: parchment, rope border, wanted poster on hover */
+[data-deco="onepiece"] .card { border: 3px double #6b4423; box-shadow: 0 0 0 3px #f5e6c8, 0 8px 22px rgba(4, 25, 45, 0.5); }
+[data-deco="onepiece"] .card .cover { transition: filter 0.3s; }
+[data-deco="onepiece"] .card:hover .cover { filter: sepia(0.75) contrast(1.05); }
+.wanted { position: absolute; left: 0; right: 0; top: 0; padding: 4px 0 6px; text-align: center; background: #f5e6c8; color: #3b2410; border-bottom: 2px solid #6b4423; transform: translateY(-100%); transition: transform 0.25s; display: grid; line-height: 1; }
+.wanted b { font-family: "Pirata One", serif; font-size: 22px; letter-spacing: 0.08em; }
+.wanted span { font-size: 8px; font-weight: 800; letter-spacing: 0.3em; }
+[data-deco="onepiece"] .card:hover .wanted { transform: none; }
+.op-compass { position: absolute; right: 6px; bottom: 6px; opacity: 0.85; animation: spin 30s linear infinite; }
+[data-deco="onepiece"] .badge:not(.free):not(.accent)::before { content: "☠"; margin-right: 2px; }
+
+/* Meadow: soot sprites peeking, paper grain */
+.soot { position: absolute; bottom: -12px; animation: peek 6s ease-in-out infinite; }
+.soot.s1 { left: 14px; }
+.soot.s2 { right: 40px; animation-duration: 7.5s; }
+@keyframes peek { 0%, 60%, 100% { transform: translateY(14px); } 70%, 90% { transform: translateY(0); } }
+.soot-eyes { animation: blink 4s infinite; transform-box: fill-box; transform-origin: center; }
+@keyframes blink { 0%, 92%, 100% { transform: scaleY(1); } 95% { transform: scaleY(0.1); } }
+[data-deco="ghibli"] .card::after { content: ""; position: absolute; inset: 0; pointer-events: none; opacity: 0.18; mix-blend-mode: multiply; background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/></filter><rect width='160' height='160' filter='url(%23n)' opacity='0.6'/></svg>"); }
+[data-deco="ghibli"] .card:hover { box-shadow: 0 0 0 2px #588157, 0 16px 34px rgba(40, 70, 60, 0.3); }
+
+/* Cursed domain: sharp cut corners, talismans, cursed-energy pulse */
+[data-deco="jjk"] .card { clip-path: polygon(0 0, calc(100% - 14px) 0, 100% 14px, 100% 100%, 14px 100%, 0 calc(100% - 14px)); }
+[data-deco="jjk"] .card:hover { animation: cursed 1.2s ease-in-out infinite; }
+@keyframes cursed { 0%, 100% { box-shadow: 0 0 0 1px #00f5d4, 0 0 20px rgba(0, 245, 212, 0.5); } 50% { box-shadow: 0 0 0 1px #e63946, 0 0 34px rgba(114, 9, 183, 0.8); } }
+.jjk-talisman { position: absolute; left: 10px; top: -4px; transform: rotate(-8deg); filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.6)); }
+[data-deco="jjk"] .badge:not(.free) { background: #f3ead2; color: #111; border: 1px solid #e63946; border-radius: 1px; }
+[data-deco="jjk"] .card .tags span { border-radius: 1px; background: #1f1f30; border-left: 3px solid #e63946; }
+
+/* Arctic champion: frost corners */
+.frost { position: absolute; width: 60px; height: 60px; pointer-events: none; }
+.frost.tl { top: 0; left: 0; background: radial-gradient(circle at 0 0, rgba(255, 255, 255, 0.55), transparent 70%); }
+.frost.br { bottom: 0; right: 0; background: radial-gradient(circle at 100% 100%, rgba(165, 243, 252, 0.45), transparent 70%); }
+
+/* Master publisher: holographic foil border and a VIP ribbon */
+[data-deco="gold"] .card { border: 0; }
+[data-deco="gold"] .card::before { content: ""; position: absolute; inset: 0; padding: 2px; border-radius: inherit; background: linear-gradient(120deg, #facc15, #f472b6, #60a5fa, #34d399, #facc15); background-size: 300% 300%; animation: foil 6s linear infinite; -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor; mask-composite: exclude; z-index: 4; pointer-events: none; }
+@keyframes foil { to { background-position: 300% 0; } }
+.vip-ribbon { position: absolute; top: 14px; right: -34px; transform: rotate(45deg); background: linear-gradient(90deg, #b8860b, #facc15, #b8860b); color: #1a1405; font: 800 10px/1 var(--font-body); letter-spacing: 0.15em; padding: 5px 40px; box-shadow: 0 2px 6px rgba(0, 0, 0, 0.5); }
+
+/* Handheld green: chunky pixel frames */
+[data-deco="gameboy"] .card, [data-deco="gameboy"] .panel { border: 3px solid #0f380f; box-shadow: 4px 4px 0 #0f380f; }
+[data-deco="gameboy"] .cover img { filter: grayscale(1) sepia(1) hue-rotate(40deg) saturate(2.2) brightness(0.85) contrast(1.1); image-rendering: pixelated; }
+
+/* Logo in the header */
+.brand { display: inline-flex; align-items: center; padding: 0 4px; text-decoration: none !important; filter: drop-shadow(0 0 10px color-mix(in srgb, var(--accent) 35%, transparent)); }
+[data-theme="retro"] .brand, [data-deco="mario"] .brand, [data-deco="gameboy"] .brand { filter: none; }
+
+/* Theme switcher */
+.theme-pop { max-height: min(640px, calc(100vh - 90px)); overflow: auto; }
+.theme-group { font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); padding: 10px 6px 4px; }
+.theme-opt.locked { opacity: 0.55; cursor: not-allowed; }
+.theme-opt .lock { margin-left: auto; font-size: 11px; color: var(--muted); text-align: right; }
+.theme-studio-link { width: 100%; margin-top: 8px; }
+
+/* Theme studio preview */
+.ts-grid { display: grid; grid-template-columns: 340px minmax(0, 1fr); gap: 18px; }
+.ts-controls { display: grid; gap: 12px; align-content: start; max-height: 64vh; overflow: auto; padding-right: 6px; }
+.ts-controls h4 { margin: 8px 0 0; font-family: var(--font-body); font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); }
+.ts-row { display: grid; grid-template-columns: 1fr auto; gap: 10px; align-items: center; font-size: 13px; }
+.ts-row input[type="color"] { width: 44px; height: 30px; border: 1px solid var(--border-strong); border-radius: 6px; background: none; padding: 2px; cursor: pointer; }
+.ts-row input[type="range"] { width: 150px; accent-color: var(--accent); }
+.ts-preview { position: relative; border-radius: 14px; overflow: hidden; min-height: 460px; border: 1px solid var(--border-strong); background: var(--bg-image), var(--bg); color: var(--text); font-family: var(--font-body); }
+.ts-preview .bar { display: flex; align-items: center; gap: 10px; padding: 10px 14px; background: var(--header-bg); border-bottom: var(--border-w) solid var(--border); }
+.ts-preview .bar .pill { padding: 6px 10px; border-radius: var(--radius-sm); font-size: 13px; font-weight: 600; color: var(--muted); }
+.ts-preview .bar .pill.on { color: var(--text); background: var(--panel-2); }
+.ts-preview .body { padding: 18px; display: grid; gap: 16px; }
+.ts-preview .card { position: relative; width: min(300px, 100%); }
+.ts-preview .card { border: var(--border-w) solid var(--border-strong); }
+@media (max-width: 900px) { .ts-grid { grid-template-columns: 1fr; } .ts-controls { max-height: none; } }

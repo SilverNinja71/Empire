@@ -169,7 +169,7 @@ export function Play2D({ map, onExit }: { map: Map2D; onExit?: () => void }) {
         const tile = map.tiles[ti];
         if (tile === 'coin' && !got.has(ti)) got.add(ti);
         if (tile === 'spike') { p.x = sx; p.y = sy; deaths++; flash = 0.3; }
-        if (tile === 'flag') won = true;
+        if (tile === 'flag' && !won) { won = true; useStore.getState().completeLevel(); }
       }
       flash = Math.max(0, flash - dt);
       renderMap(g, map, now / 1000, got);

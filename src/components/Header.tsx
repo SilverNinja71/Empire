@@ -1,10 +1,13 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { Activity, Bell, Library, LogIn, LogOut, Menu, MessagesSquare, Palette, Plus, Search, Store, Trophy, User } from 'lucide-react';
+import { Activity, Bell, Library, Lock, LogIn, LogOut, Menu, MessagesSquare, Paintbrush, Palette, Plus, Search, Store, Trophy, User } from 'lucide-react';
 import { useAllGames, useStore } from '../lib/store';
 import { href, navigate, useRoute } from '../lib/router';
 import { accounts, useAccount } from '../lib/account';
-import { THEMES } from '../lib/play';
+import { THEMES, THEME_BY_ID, type ThemeDef } from '../lib/themes';
+import { useThemeDef } from '../lib/useTheme';
+import { useUnlocks } from '../lib/unlocks';
+import { EmpireLogo } from './EmpireLogo';
 import { timeAgo } from '../lib/util';
 import { Cover } from './Cover';
 
@@ -158,27 +161,58 @@ function SearchBox() {
 
 function ThemeSwitcher() {
   const theme = useStore((s) => s.theme);
+  const custom = useStore((s) => s.customTheme);
   const setTheme = useStore((s) => s.setTheme);
+  const openModal = useStore((s) => s.openModal);
+  const unlocks = useUnlocks();
+  const active = useThemeDef();
   const [open, setOpen] = useState(false);
   const ref = useClickAway(open, () => setOpen(false));
-  const cur = THEMES.find((t) => t.id === theme)!;
+  const cur = THEME_BY_ID[active.id];
+  const groups: [ThemeDef['group'], string][] = [['featured', 'Featured'], ['fan', 'Fan themes'], ['classic', 'Classic'], ['unlock', 'Unlockable']];
   return (
     <div className="pop-wrap" ref={ref}>
-      <button className="btn small" onClick={() => setOpen(!open)} aria-label="Change theme" title="Theme" style={{ borderRadius: 999, height: 38 }}>
-        <span className="swatch" style={{ width: 18, height: 18, borderRadius: '50%', background: cur.swatch }} />
+      <button className="btn small" onClick={() => setOpen(!open)} aria-label="Change theme" title={`Theme: ${active.name}`} style={{ borderRadius: 999, height: 38 }}>
+        <span className="swatch" style={{ width: 18, height: 18, borderRadius: '50%', background: cur?.swatch ?? active.tokens.accent }} />
         <Palette size={16} />
       </button>
-      <Popover open={open} width={290}>
-        <h4>Theme</h4>
-        {THEMES.map((t) => (
-          <button key={t.id} className={'theme-opt' + (t.id === theme ? ' on' : '')} onClick={() => { setTheme(t.id); setOpen(false); }}>
-            <span className="swatch" style={{ background: t.swatch }} />
-            <span>
-              <b>{t.name}</b>
-              <div className="muted" style={{ fontSize: 12 }}>{t.desc}</div>
-            </span>
-          </button>
-        ))}
+      <Popover open={open} width={400}>
+        <div className="theme-pop">
+          {groups.map(([g, label]) => (
+            <div key={g}>
+              <div className="theme-group">{label}</div>
+              {THEMES.filter((t) => t.group === g).map((t) => {
+                const lock = t.unlock && !unlocks[t.unlock.id].done ? unlocks[t.unlock.id] : null;
+                return (
+                  <button
+                    key={t.id}
+                    className={'theme-opt' + (t.id === theme ? ' on' : '') + (lock ? ' locked' : '')}
+                    disabled={!!lock}
+                    onClick={() => { setTheme(t.id); setOpen(false); }}
+                    title={lock ? t.unlock!.how : t.desc}
+                  >
+                    <span className="swatch" style={{ background: t.swatch }} />
+                    <span style={{ minWidth: 0 }}>
+                      <b>{t.name}</b>
+                      <div className="muted" style={{ fontSize: 12 }}>{lock ? t.unlock!.how : t.desc}</div>
+                    </span>
+                    {lock && <span className="lock"><Lock size={13} /><br />{lock.progress}</span>}
+                  </button>
+                );
+              })}
+            </div>
+          ))}
+          {custom && (
+            <>
+              <div className="theme-group">Yours</div>
+              <button className={'theme-opt' + (theme === 'custom' ? ' on' : '')} onClick={() => { setTheme('custom'); setOpen(false); }}>
+                <span className="swatch" style={{ background: custom.bgMode === 'solid' || custom.bgMode === 'image' ? custom.bgColor : `linear-gradient(135deg, ${custom.bgColor}, ${custom.bgColor2})` }} />
+                <span><b>{custom.name}</b><div className="muted" style={{ fontSize: 12 }}>Made in the Theme Studio</div></span>
+              </button>
+            </>
+          )}
+          <button className="btn primary theme-studio-link" onClick={() => { setOpen(false); openModal('theme'); }}><Paintbrush size={15} /> Build your own theme</button>
+        </div>
       </Popover>
     </div>
   );
@@ -248,6 +282,15 @@ function ProfileMenu() {
   );
 }
 
+function HeaderLogo() {
+  const { logo } = useThemeDef();
+  return (
+    <a className="brand" href={href('/')} aria-label="Empire home">
+      <EmpireLogo fontColor={logo} size={30} />
+    </a>
+  );
+}
+
 export function Header() {
   const { parts } = useRoute();
   const [acc] = useAccount();
@@ -281,7 +324,7 @@ export function Header() {
           <span className="lvl"><Trophy size={14} /> Lv {acc.level}</span>
         </a>
         <ProfileMenu />
-        <a className="brand" href={href('/')}>Empire</a>
+        <HeaderLogo />
       </div>
     </header>
   );

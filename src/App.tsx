@@ -7,6 +7,11 @@ import { Sidebar } from './components/Sidebar';
 import { Toasts } from './components/ui';
 import { AccountModal } from './components/AccountModal';
 import { MakeGameModal } from './components/MakeGameModal';
+import { ThemeBackdrop } from './components/ThemeBackdrop';
+import { ThemeStudioModal } from './components/ThemeStudioModal';
+import { useThemeDef } from './lib/useTheme';
+import { applyTokens, THEMES } from './lib/themes';
+import { useUnlocks } from './lib/unlocks';
 import { Store } from './pages/Store';
 import { GamePage } from './pages/GamePage';
 import { Forum } from './pages/Forum';
@@ -41,13 +46,33 @@ function Loading({ label = 'Loading…' }: { label?: string }) {
 
 export function App() {
   const theme = useStore((s) => s.theme);
+  const custom = useStore((s) => s.customTheme);
+  const active = useThemeDef();
+  const unlocks = useUnlocks();
   const modal = useStore((s) => s.modal);
   const load = useCatalog((s) => s.load);
   const { parts } = useRoute();
   const top = parts[0] ?? '';
 
   useEffect(() => { load(); }, [load]);
-  useEffect(() => { document.documentElement.dataset.theme = theme; }, [theme]);
+  useEffect(() => {
+    const root = document.documentElement;
+    root.dataset.theme = active.id;
+    root.dataset.deco = active.deco;
+    applyTokens(root, active.tokens, active.borderWidth);
+  }, [theme, custom]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    // Tell people when a milestone theme unlocks
+    const st = useStore.getState();
+    THEMES.filter((t) => t.unlock && unlocks[t.unlock.id].done && !st.unlocksSeen.includes(t.id)).forEach((t) => {
+      st.markUnlockSeen(t.id);
+      st.notify(`New theme unlocked: ${t.name}! Pick it from the theme menu.`);
+      st.toast(`🎨 Theme unlocked: ${t.name}`);
+    });
+  }, [unlocks]);
+  useEffect(() => {
+    if (top === 'theme-studio') useStore.getState().openModal('theme');
+  }, [top]);
   useEffect(() => {
     // Trophies earned in a game show up as notifications here
     const on = (e: Event) => {
@@ -89,6 +114,8 @@ export function App() {
   );
 
   return (
+    <>
+    <ThemeBackdrop deco={active.deco} />
     <div className="app">
       <Header />
       <Sidebar />
@@ -103,7 +130,9 @@ export function App() {
       <Suspense fallback={null}>{modal === 'add' && <AddGameModal />}</Suspense>
       <MakeGameModal />
       <AccountModal />
+      <ThemeStudioModal />
       <Toasts />
     </div>
+    </>
   );
 }

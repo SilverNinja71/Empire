@@ -7,6 +7,7 @@ import { navigate } from '../lib/router';
 import { playGame } from '../lib/play';
 import { Cover } from './Cover';
 import { Stars } from './ui';
+import { CardDeco } from './CardDeco';
 
 export const engineLabel = (g: Game) => (g.origin === 'studio' ? 'Empire Studio' : g.engine === 'ThreeJS' ? 'WebGL · Three.js' : g.engine);
 
@@ -38,6 +39,7 @@ export function GameCard({ game, index = 0 }: { game: Game; index?: number }) {
         onKeyDown={(e) => e.key === 'Enter' && e.target === e.currentTarget && navigate(`/game/${game.id}`)}
         aria-label={game.title}
       >
+        <CardDeco index={index} />
         <div className="cover">
           <div className="art"><Cover game={game} showTitle={!game.cover} titleSize={20} /></div>
           <div className="tl">

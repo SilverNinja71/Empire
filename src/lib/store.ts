@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import type { ActivityItem, ActivityKind, ForumThread, Game, Notice, StudioProject, ThemeId } from './types';
+import { DEFAULT_THEME, type CustomTheme } from './themes';
 import { parseCatalog } from './xml';
 import { uid } from './util';
 import { SEED_THREADS } from '../data/forumSeed';
@@ -10,7 +11,7 @@ import { SEED_THREADS } from '../data/forumSeed';
  * GitHub Pages has no server, so forum posts and added games stay on this device
  * until Empire is connected to an online database.
  */
-type Modal = null | 'add' | 'make' | 'account';
+type Modal = null | 'add' | 'make' | 'account' | 'theme';
 
 interface Toast {
   id: string;
@@ -29,6 +30,9 @@ interface State {
   notices: Notice[];
   projects: StudioProject[];
   welcomed: boolean;
+  customTheme: CustomTheme | null;
+  levelsCompleted: number;
+  unlocksSeen: string[];
 
   // not saved
   modal: Modal;
@@ -36,6 +40,9 @@ interface State {
   toasts: Toast[];
 
   setTheme(t: ThemeId): void;
+  saveCustomTheme(t: CustomTheme): void;
+  completeLevel(): void;
+  markUnlockSeen(id: string): void;
   toggleWish(g: Game): void;
   markPlayed(g: Game): void;
   rate(g: Game, stars: number): void;
@@ -61,7 +68,7 @@ const MAX_ACTIVITY = 200;
 export const useStore = create<State>()(
   persist(
     (set, get) => ({
-      theme: 'obsidian',
+      theme: DEFAULT_THEME,
       wishlist: [],
       played: {},
       playCount: {},
@@ -74,11 +81,17 @@ export const useStore = create<State>()(
       ],
       projects: [],
       welcomed: false,
+      customTheme: null,
+      levelsCompleted: 0,
+      unlocksSeen: [],
       modal: null,
       sidebarOpen: false,
       toasts: [],
 
       setTheme: (theme) => set({ theme }),
+      saveCustomTheme: (customTheme) => set({ customTheme, theme: 'custom' }),
+      completeLevel: () => set({ levelsCompleted: get().levelsCompleted + 1 }),
+      markUnlockSeen: (id) => set({ unlocksSeen: Array.from(new Set([...get().unlocksSeen, id])) }),
       toggleWish: (g) => {
         const on = get().wishlist.includes(g.id);
         set({ wishlist: on ? get().wishlist.filter((x) => x !== g.id) : [...get().wishlist, g.id] });

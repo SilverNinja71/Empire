@@ -1,6 +1,5 @@
 /* Empire: every color, font and radius comes from these variables, so a theme is just a new set of values. */
-:root,
-[data-theme="obsidian"] {
+:root {
   --bg: #0a0c11;
   --bg-image: radial-gradient(1200px 600px at 80% -10%, rgba(124, 92, 255, 0.14), transparent 60%),
     radial-gradient(900px 500px at -10% 110%, rgba(34, 211, 238, 0.08), transparent 60%);
@@ -31,124 +30,19 @@
   color-scheme: dark;
 }
 
-[data-theme="neon"] {
-  --bg: #07020f;
-  --bg-image: linear-gradient(rgba(255, 43, 214, 0.06) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(0, 240, 255, 0.05) 1px, transparent 1px),
-    radial-gradient(900px 500px at 50% -20%, rgba(255, 43, 214, 0.25), transparent 70%);
-  --panel: #10061f;
-  --panel-2: #170a2c;
-  --panel-3: #22103e;
-  --border: rgba(255, 43, 214, 0.18);
-  --border-strong: rgba(0, 240, 255, 0.45);
-  --text: #f6e9ff;
-  --muted: #a98fc7;
-  --accent: #ff2bd6;
-  --accent-2: #00f0ff;
-  --accent-contrast: #12001a;
-  --play: #00f0ff;
-  --play-contrast: #00151a;
-  --glow: 0 0 18px rgba(255, 43, 214, 0.7), 0 0 40px rgba(0, 240, 255, 0.25);
-  --shadow: 0 0 0 1px rgba(255, 43, 214, 0.15), 0 12px 40px rgba(0, 0, 0, 0.6);
-  --radius: 4px;
-  --radius-sm: 3px;
-  --font-display: "JetBrains Mono", ui-monospace, monospace;
-  --header-bg: rgba(7, 2, 15, 0.85);
-  color-scheme: dark;
-}
-
-[data-theme="retro"] {
-  --bg: #008080;
-  --bg-image: none;
-  --panel: #c0c0c0;
-  --panel-2: #d4d0c8;
-  --panel-3: #e4e1da;
-  --border: #808080;
-  --border-strong: #000000;
-  --text: #000000;
-  --muted: #404040;
-  --accent: #000080;
-  --accent-2: #800080;
-  --accent-contrast: #ffffff;
-  --play: #008000;
-  --play-contrast: #ffffff;
-  --glow: none;
-  --shadow: 2px 2px 0 #000000;
-  --radius: 0px;
-  --radius-sm: 0px;
-  --font-body: "Inter", Tahoma, sans-serif;
-  --font-display: "Press Start 2P", monospace;
-  --header-bg: #c0c0c0;
-  --bevel: inset -2px -2px 0 #808080, inset 2px 2px 0 #ffffff;
-  color-scheme: light;
-}
-
-[data-theme="frosted"] {
-  --bg: #1b1f3b;
-  --bg-image: radial-gradient(800px 600px at 10% 10%, #4f46e5 0%, transparent 60%),
-    radial-gradient(700px 600px at 90% 20%, #db2777 0%, transparent 60%),
-    radial-gradient(800px 700px at 50% 100%, #0891b2 0%, transparent 60%);
-  --panel: rgba(255, 255, 255, 0.1);
-  --panel-2: rgba(255, 255, 255, 0.14);
-  --panel-3: rgba(255, 255, 255, 0.2);
-  --border: rgba(255, 255, 255, 0.22);
-  --border-strong: rgba(255, 255, 255, 0.45);
-  --text: #ffffff;
-  --muted: rgba(255, 255, 255, 0.72);
-  --accent: #ffffff;
-  --accent-2: #fde68a;
-  --accent-contrast: #1b1f3b;
-  --play: #ffffff;
-  --play-contrast: #312e81;
-  --glow: 0 0 30px rgba(255, 255, 255, 0.35);
-  --shadow: 0 20px 50px rgba(15, 10, 60, 0.35);
-  --radius: 20px;
-  --radius-sm: 12px;
-  --panel-filter: blur(18px) saturate(140%);
-  --header-bg: rgba(255, 255, 255, 0.1);
-  color-scheme: dark;
-}
-
-[data-theme="steam"] {
-  --bg: #1b2838;
-  --bg-image: linear-gradient(180deg, #171a21 0%, #1b2838 320px);
-  --panel: #16202d;
-  --panel-2: #213246;
-  --panel-3: #2a475e;
-  --border: rgba(102, 192, 244, 0.12);
-  --border-strong: rgba(102, 192, 244, 0.4);
-  --text: #c7d5e0;
-  --muted: #8f98a0;
-  --accent: #66c0f4;
-  --accent-2: #a4d007;
-  --accent-contrast: #0b141d;
-  --play: #75b022;
-  --play-contrast: #0e1a03;
-  --glow: 0 0 16px rgba(102, 192, 244, 0.35);
-  --shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
-  --radius: 3px;
-  --radius-sm: 2px;
-  --font-display: "Inter", system-ui, sans-serif;
-  --header-bg: #171a21;
-  color-scheme: dark;
-}
-
 * { box-sizing: border-box; }
 html, body, #root { height: 100%; }
 body {
   margin: 0;
-  background: var(--bg);
-  background-image: var(--bg-image);
-  background-size: 40px 40px, 40px 40px, auto;
+  background: var(--bg-image, none), var(--bg);
   background-attachment: fixed;
   color: var(--text);
   font-family: var(--font-body);
   font-size: 15px;
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
-  transition: background-color 0.3s, color 0.3s;
+  transition: color 0.3s;
 }
-[data-theme="obsidian"] body, [data-theme="frosted"] body, [data-theme="steam"] body, [data-theme="retro"] body { background-size: auto; }
 a { color: var(--accent-2); text-decoration: none; }
 a:hover { text-decoration: underline; }
 button { font: inherit; color: inherit; }
@@ -282,15 +176,6 @@ label.field .hint { font-weight: 400; color: var(--muted); }
 }
 .topbar .spacer { flex: 1; }
 .topbar .right { display: flex; align-items: center; gap: 8px; }
-.brand {
-  font-family: var(--font-display); font-weight: 800; font-size: 28px; letter-spacing: -0.02em;
-  background: linear-gradient(100deg, var(--accent), var(--accent-2));
-  -webkit-background-clip: text; background-clip: text; color: transparent;
-  text-decoration: none !important; padding: 0 4px; white-space: nowrap;
-  filter: drop-shadow(0 0 14px color-mix(in srgb, var(--accent) 45%, transparent));
-}
-[data-theme="retro"] .brand { font-size: 16px; color: var(--accent); background: none; -webkit-text-fill-color: var(--accent); filter: none; }
-[data-theme="frosted"] .brand { background: linear-gradient(100deg, #fff, #fde68a); -webkit-background-clip: text; background-clip: text; }
 .wallet {
   display: inline-flex; align-items: center; gap: 10px;
   height: 38px; padding: 0 12px;
@@ -627,7 +512,6 @@ pre.code { margin: 0; padding: 14px; border-radius: var(--radius-sm); background
   .sidebar { position: fixed; left: 0; top: 64px; bottom: 0; width: 280px; z-index: 50; transform: translateX(-100%); transition: transform 0.25s; background: var(--panel); }
   .sidebar.open { transform: none; box-shadow: var(--shadow); }
   .scrim.open { display: block; position: fixed; inset: 64px 0 0; z-index: 45; background: rgba(0, 0, 0, 0.5); }
-  .brand { font-size: 22px; }
   .add-game-label { display: none; }
   .hero { height: 360px; }
   .hero .thumbs { display: none; }
