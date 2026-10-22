@@ -45,6 +45,9 @@
 .holo { position: absolute; inset: -20%; background: conic-gradient(from 0deg, rgba(250, 204, 21, 0.1), rgba(244, 114, 182, 0.1), rgba(96, 165, 250, 0.1), rgba(52, 211, 153, 0.1), rgba(250, 204, 21, 0.1)); animation: spin 40s linear infinite; filter: blur(40px); }
 
 /* Readable headings over bright scenery */
+[data-deco="sunset"] .sidebar { background: rgba(31, 10, 14, 0.94); }
+[data-deco="october"] .sidebar, [data-deco="jjk"] .sidebar { background: color-mix(in srgb, var(--panel-2) 94%, transparent); }
+[data-deco="ghibli"] .sidebar, [data-deco="onepiece"] .sidebar { background: color-mix(in srgb, var(--panel) 96%, transparent); }
 [data-deco="sunset"] .page-head h1, [data-deco="sunset"] .section-title h2, [data-deco="sunset"] .section-title .muted { text-shadow: 0 2px 12px rgba(20, 5, 8, 0.85); }
 [data-deco="mario"] .page-head h1, [data-deco="mario"] .section-title h2 { color: #fff; text-shadow: 3px 3px 0 #000; }
 [data-deco="mario"] .section-title .muted, [data-deco="mario"] .page-head p { color: #fff; text-shadow: 2px 2px 0 #000; }
@@ -58,8 +61,8 @@
 
 /* October: leaves in the corners, lantern glow on hover */
 .oc-leaf { position: absolute; filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.5)); }
-.oc-leaf.tl { top: -6px; left: -6px; transform: rotate(-30deg); }
-.oc-leaf.br { bottom: -6px; right: -4px; transform: rotate(140deg); }
+.oc-leaf.tl { top: 30%; left: -12px; transform: rotate(-30deg); }
+.oc-leaf.br { top: 46%; right: -12px; transform: rotate(140deg); }
 [data-deco="october"] .card:hover { box-shadow: 0 0 0 1px #FF7B54, 0 0 30px rgba(255, 123, 84, 0.6), 0 0 70px rgba(139, 92, 246, 0.35); }
 [data-deco="october"] .card { background: linear-gradient(180deg, rgba(46, 33, 80, 0.95), rgba(24, 18, 43, 0.95)); }
 
@@ -71,7 +74,7 @@
 .wanted b { font-family: "Pirata One", serif; font-size: 22px; letter-spacing: 0.08em; }
 .wanted span { font-size: 8px; font-weight: 800; letter-spacing: 0.3em; }
 [data-deco="onepiece"] .card:hover .wanted { transform: none; }
-.op-compass { position: absolute; right: 6px; bottom: 6px; opacity: 0.85; animation: spin 30s linear infinite; }
+.op-compass { position: absolute; right: 46px; top: 4px; width: 34px; height: 34px; opacity: 0.9; animation: spin 30s linear infinite; }
 [data-deco="onepiece"] .badge:not(.free):not(.accent)::before { content: "☠"; margin-right: 2px; }
 
 /* Meadow: soot sprites peeking, paper grain */
@@ -88,7 +91,7 @@
 [data-deco="jjk"] .card { clip-path: polygon(0 0, calc(100% - 14px) 0, 100% 14px, 100% 100%, 14px 100%, 0 calc(100% - 14px)); }
 [data-deco="jjk"] .card:hover { animation: cursed 1.2s ease-in-out infinite; }
 @keyframes cursed { 0%, 100% { box-shadow: 0 0 0 1px #00f5d4, 0 0 20px rgba(0, 245, 212, 0.5); } 50% { box-shadow: 0 0 0 1px #e63946, 0 0 34px rgba(114, 9, 183, 0.8); } }
-.jjk-talisman { position: absolute; left: 10px; top: -4px; transform: rotate(-8deg); filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.6)); }
+.jjk-talisman { position: absolute; right: 10px; top: 42px; transform: rotate(8deg); filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.6)); }
 [data-deco="jjk"] .badge:not(.free) { background: #f3ead2; color: #111; border: 1px solid #e63946; border-radius: 1px; }
 [data-deco="jjk"] .card .tags span { border-radius: 1px; background: #1f1f30; border-left: 3px solid #e63946; }
 
